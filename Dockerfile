@@ -17,4 +17,3 @@ RUN choco install nuget.commandline -y
 # Add NuGet to PATH
 RUN $env:Path = 'C:\Program Files (x86)\NuGet;' + $env:Path; [Environment]::SetEnvironmentVariable('Path', $env:Path, [EnvironmentVariableTarget]::Machine)
 
-CMD [ "pwsh" ]
