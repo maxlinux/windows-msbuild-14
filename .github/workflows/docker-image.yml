@@ -3,16 +3,16 @@ name: Docker Image CI
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 jobs:
-
   build:
-
     runs-on: windows-latest
-
     steps:
     - uses: actions/checkout@v3
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag windows-msbuild-14:$(date +%s)
+      run: docker build -t windows-msbuild-14 -f Dockerfile .
+    - name: Log in to Docker registry
+      run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+    - name: Push Docker image
+      run: docker push windows-msbuild-14
+
