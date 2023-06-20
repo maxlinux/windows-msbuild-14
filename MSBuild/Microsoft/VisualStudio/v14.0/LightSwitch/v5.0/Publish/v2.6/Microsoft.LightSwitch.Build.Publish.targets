@@ -1,0 +1,182 @@
+<!--
+***********************************************************************************************
+Microsoft.LightSwitch.Build.Publish.targets
+
+WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and have
+          created a backup copy.  Incorrect changes to this file will make it
+          impossible to load or build your projects from the command-line or the IDE.
+
+This file defines the steps in the standard build process specific for SMB projects.
+
+Copyright (C) Microsoft Corporation. All rights reserved.
+***********************************************************************************************
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+    <Import Project="Microsoft.LightSwitch.Common.Publish.targets" />
+
+    <!-- Include the LightSwitch specific set of providers to the WAP publishing project's set -->
+    <PropertyGroup>
+        <AfterAddIisSettingAndFileContentsToSourceManifest>$(AfterAddIisSettingAndFileContentsToSourceManifest);AddLightSwitchProvidersToSourceManifest</AfterAddIisSettingAndFileContentsToSourceManifest>
+        <AfterAddIisAndContentDeclareParametersItems>$(AfterAddIisAndContentDeclareParametersItems);AddLightSwitchProvidersDeclareParametersItems</AfterAddIisAndContentDeclareParametersItems>
+        <AfterAddDatabasesToSourceManifest>$(AfterAddDatabasesToSourceManifest);AddLightSwitchDatabasesToSourceManifest</AfterAddDatabasesToSourceManifest>
+        <GenerateSampleDeployScriptDependsOn>$(GenerateSampleDeployScriptDependsOn);SetLightSwitchMsDeployParameterAttribute</GenerateSampleDeployScriptDependsOn>
+    </PropertyGroup>
+
+    <!-- 
+      ======================================================================================
+                              SetLightSwitchMsDeployParameterAttribute
+      Set ExcludeFromSetParameter for LightSwitch MsDeployDeclareParameters
+      ======================================================================================
+    -->
+    <Target Name="SetLightSwitchMsDeployParameterAttribute">
+        <ItemGroup Condition=" $(LightSwitchExcludeSetParameter) != '' ">
+            <MsDeployDeclareParameters Condition=" $(LightSwitchExcludeSetParameter.Contains('{%(MsDeployDeclareParameters.Identity)}'))">
+                <ExcludeFromSetParameter>true</ExcludeFromSetParameter>
+            </MsDeployDeclareParameters>
+        </ItemGroup>
+    </Target>
+
+    <!-- 
+        ======================================================================================
+                                AddLightSwitchProvidersToSourceManifest
+        Adds providers specific to LightSwitch to the WAP's set of Web Deploy providers
+        Providers to use are based on the publishing method being used:
+            Package: Uses the LightSwitchApplication provider, unless told not to (UseLightSwitchWebDeploymentProvider is false)
+            MSDeploy Publish: Chooses the providers to use based on which providers are available on the destination. The preference is as follows:
+                - Use AppPoolNetFx, AppPoolPipeline if available
+                - Else Use LightSwitchApplication if available
+                - Else Use no additional providers
+        ======================================================================================
+    -->
+    <Target Name="AddLightSwitchProvidersToSourceManifest"
+            DependsOnTargets="GetWebDeploymentProvidersToUse">
+
+        <!-- Add appPoolNetFx, appPoolPipeline providers
+             when built-in MSDeploy providers are available -->
+        <ItemGroup Condition=" '$(WebPublishMethod)' == 'MSDeploy' and '$(WebDeploymentProvidersToUse)' == 'MSDeploy' ">
+            <MsDeploySourceManifest Include="appPoolNetFx">
+                <Path></Path>
+                <NetFxVersion>v4.0</NetFxVersion>
+                <AdditionalProviderSettings>NetFxVersion</AdditionalProviderSettings>
+            </MsDeploySourceManifest>
+            <MsDeploySourceManifest Include="appPoolPipeline">
+                <Path></Path>
+                <PipelineMode>Integrated</PipelineMode>
+                <AdditionalProviderSettings>PipelineMode</AdditionalProviderSettings>
+            </MsDeploySourceManifest>
+        </ItemGroup>
+
+        <!-- Add LightSwitchApplication provider when using LightSwitch providers -->
+        <ItemGroup Condition=" ('$(WebPublishMethod)' == 'MSDeploy' and '$(WebDeploymentProvidersToUse)' == 'LightSwitch') or ( '$(WebPublishMethod)' == 'Package' and '$(UseLightSwitchWebDeploymentProvider)' != 'false' )">
+            <MsDeploySourceManifest Include="LightSwitchApplication"
+                                    Condition=" '%(MsDeploySourceManifest.Identity)' == 'IisApp' ">
+                <Path>%(Path)</Path>
+                <authenticationmode>$(AuthenticationType)</authenticationmode>
+                <AdditionalProviderSettings>authenticationmode</AdditionalProviderSettings>
+            </MsDeploySourceManifest>
+        </ItemGroup>
+    </Target>
+
+    <!-- 
+        ======================================================================================
+                                AddLightSwitchDatabasesToSourceManifest
+        Adds providers specific to LightSwitch database deployment to the WAP's set of Web Deploy providers
+        ======================================================================================
+    -->
+    <Target Name="AddLightSwitchDatabasesToSourceManifest"
+            Condition=" '$(WebPublishMethod)' == 'Package' and '$(PackageSchemaType)' == 'Script' " >
+        <ItemGroup>
+            <_LightSwitchSqlScriptFile Include="$(LightSwitchSqlScriptFile)" />
+        </ItemGroup>
+        <PropertyGroup>
+            <_LightSwitchSqlScriptFileFullPath>%(_LightSwitchSqlScriptFile.FullPath)</_LightSwitchSqlScriptFileFullPath>
+        </PropertyGroup>
+
+        <ItemGroup>
+            <MsDeploySourceManifest Include="dbFullSql"
+                                    Condition=" '$(RequiresIntrinsicDataSource)' == 'true' and '$(DeployDatabase)' == 'true' ">
+                <Path>$(_LightSwitchSqlScriptFileFullPath)</Path>
+                <transacted>false</transacted>
+                <AdditionalProviderSettings>transacted</AdditionalProviderSettings>
+            </MsDeploySourceManifest>
+        </ItemGroup>
+    </Target>
+
+    <!-- 
+        ======================================================================================
+                                AddLightSwitchProvidersDeclareParametersItems
+        Adds parameters specific to LightSwitch to the WAP's set of Web Deploy parameters
+        ======================================================================================
+    -->
+    <Target Name="AddLightSwitchProvidersDeclareParametersItems">
+        <!-- Set the appPoolNetFx and appPoolPipelineMode parameters when using built-in MSdeploy providers -->
+
+        <ItemGroup Condition=" '$(WebDeploymentProvidersToUse)' == 'MSDeploy' ">
+            <MsDeployDeclareParameters Include="appPoolNetFx"
+                                       Condition=" '%(MsDeployDeclareParameters.Scope)' == 'IisApp' ">
+                <Kind>ProviderPath</Kind>
+                <Scope>AppPoolNetFx</Scope>
+                <Match></Match>
+                <DefaultValue>%(DefaultValue)</DefaultValue>
+                <Tags>Hidden</Tags>
+            </MsDeployDeclareParameters>
+            <MsDeployDeclareParameters Include="appPoolPipeline"
+                                       Condition=" '%(MsDeployDeclareParameters.Scope)' == 'IisApp' ">
+                <Kind>ProviderPath</Kind>
+                <Scope>AppPoolPipeline</Scope>
+                <Match></Match>
+                <DefaultValue>%(DefaultValue)</DefaultValue>
+                <Tags>Hidden</Tags>
+            </MsDeployDeclareParameters>
+        </ItemGroup>
+
+        <!-- Copy the Match and DefaultValue from the IisApp parameter when using the LightSwitch providers -->
+        <ItemGroup Condition=" '$(WebDeploymentProvidersToUse)' == 'LightSwitch' ">
+            <MsDeployDeclareParameters Include="LightSwitchApplication_Path"
+                                       Condition=" '%(MsDeployDeclareParameters.Scope)' == 'IisApp' ">
+                <Kind>ProviderPath</Kind>
+                <Scope>LightSwitchApplication</Scope>
+                <Match>%(Match)</Match>
+                <DefaultValue>%(DefaultValue)</DefaultValue>
+                <Tags>Hidden</Tags>
+            </MsDeployDeclareParameters>
+        </ItemGroup>
+    </Target>
+
+    <!-- Overwrite Microsoft.Web.Publishing.targets's CopyAllFilesToSingleFolder... target.
+         It is expected that all files to be published have already been copied to the proper directory -->
+    <Target Name="CopyAllFilesToSingleFolderForPackage" />
+    <Target Name="CopyAllFilesToSingleFolderForMsDeploy" />
+
+    <!--
+    ======================================================================================
+                           GetProjectConfigTransformFileName
+    Returns the name of the project config transform file of the Server project.
+    ======================================================================================
+    -->
+    <Target Name="GetProjectConfigTransformFileName"
+            Outputs="$(ProjectConfigTransformFileName)"
+            Condition=" '$(LightSwitchProjectTypeV45)' == 'Server' and '$(TransformWebConfigEnabled)' == 'true' ">
+    </Target>
+
+    <!--
+    ======================================================================================
+                           GetLightSwitchProjectSubType
+    Returns an item with the LightSwitchProjectSubType of a Client project. The item's
+    spec is the project's ClientProjectName or MSBuildProjectName.
+    ======================================================================================
+    -->
+    <Target Name="GetLightSwitchProjectSubType"
+            Outputs="@(_ProjectWithSubType)">
+        <PropertyGroup>
+            <ClientProjectName Condition=" '$(ClientProjectName)' == '' ">$(MSBuildProjectName)</ClientProjectName>
+        </PropertyGroup>
+        <ItemGroup>
+            <_ProjectWithSubType Include="$(ClientProjectName)">
+                <ProjectSubType>$(LightSwitchProjectSubType)</ProjectSubType>
+                <ProjectFullPath>$(MSBuildProjectFullPath)</ProjectFullPath>
+            </_ProjectWithSubType>
+        </ItemGroup>
+    </Target>
+</Project>

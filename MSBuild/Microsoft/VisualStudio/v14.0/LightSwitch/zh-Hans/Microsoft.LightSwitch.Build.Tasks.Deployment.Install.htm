@@ -1,0 +1,63 @@
+﻿<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    
+</head>
+<h1>
+    Microsoft Visual Studio LightSwitch 应用程序安装说明
+</h1>
+<p >
+    &nbsp;<font size="2">
+       以下步骤是安装 2 层桌面
+        客户端应用程序的必要步骤：
+    </font>
+</p>
+<p  >
+    1.&nbsp;&nbsp;&nbsp; 如果尚未安装 SQL Server Express，则将其安装在目标（客户端）
+    计算机上。LightSwitch 应用程序需要 SQL Server 2005 或更高
+    版本，或者 SQL Server Express 2005 或更高版本。
+    <a href="http://go.microsoft.com/fwlink/?LinkId=206709">了解更多</a>
+</p>
+<p  >
+    2.&nbsp;&nbsp;&nbsp; 在目标计算机上，通过使用 sqlcmd.exe 命令工具部署
+    数据库架构。Sqlcmd.exe 通常安装在 SQL Server
+    中的 \Microsoft SQL Server\110\Tools\Binn 目录（在
+    Program Files or Program File (x86) 目录下）。
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; 从提升的命令提示符下，更改为包含发布输出的
+    目录，然后输入如下命令
+：
+</p>
+<p  >
+    &nbsp;<span >sqlcmd.exe -i MyApplication.sql -S .\SQLExpress</span>
+</p>
+<p  >
+    &nbsp;用您的应用程序名称替换 <em>MyApplication</em>，并用服务器上的数据库位置替换
+    <em>.\SQLExpress</em>。
+</p><p  >
+    3.&nbsp;&nbsp;&nbsp; 在发布输出的应用程序文件
+    子目录中查找 web.config 文件。
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; 在记事本中打开 web.config，在
+     &lt;connectionStrings&gt; 中编辑连接 <connectionstrings>
+        使用您的服务器和数据库名称。例如，
+        输入如下内容：
+</p>
+<p  >
+    &lt;add name=&quot;_IntrinsicData&quot; connectionString=&quot;Data
+    Source=SERVERNAME\SQLEXPRESS;Initial Catalog=MyApplication;Integrated
+    Security=True;Pooling=True;Connect Timeout=30;User Instance=False&quot; /&gt;
+</p>
+<p  >
+    将 <em>SERVERNAME </em>替换为数据库服务器的名称，将<em>
+        <em>MyApplication</em>
+    </em>替换为您的应用程序名称。
+</p>
+<p  >
+    4<em>
+        .&nbsp;&nbsp;&nbsp;
+    </em>
+    在目标计算机上运行 Setup.exe 以
+    安装此应用程序。
+</p>

@@ -1,0 +1,63 @@
+﻿<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    
+</head>
+<h1>
+    Instrukcja instalacji aplikacji Microsoft Visual Studio LightSwitch
+</h1>
+<p >
+    &nbsp;<font size="2">
+Aby zainstalować dwuwarstwową aplikację klasyczną klienta,
+ wykonaj te kroki:
+    </font>
+</p>
+<p  >
+    1.&nbsp;&nbsp;&nbsp; Zainstaluj oprogramowanie SQL Server Express na komputerze docelowym (klienta), jeśli
+    nie jest ono już zainstalowane. Aplikacje LightSwitch wymagają oprogramowania SQL Server 2005 lub nowszego
+    albo oprogramowania SQL Server Express 2005 lub nowszego.
+    <a href="http://go.microsoft.com/fwlink/?LinkId=206709">Dowiedz się więcej o opcjach instalacji oprogramowania SQL Server Express.</a>
+</p>
+<p  >
+    2.&nbsp;&nbsp;&nbsp; Na komputerze docelowym wdróż schemat bazy danych przy użyciu
+    narzędzia polecenia sqlcmd.exe. Narzędzie sqlcmd.exe jest instalowane wraz z oprogramowaniem SQL Server,
+    zwykle w podkatalogu \Microsoft SQL Server\110\Tools\Binn katalogu
+    Program Files lub Program File (x86).
+</p>
+<p  >
+    a.nbsp;&nbsp;&nbsp;&nbsp; W wierszu polecenia z podwyższonym poziomem uprawnień przełącz 
+    katalog, który zawiera publikowane dane wyjściowe, i wprowadź polecenie podobne do 
+    następującego:
+</p>
+<p  >
+    &nbsp;<span >sqlcmd.exe -i MyApplication.sql -S .\SQLExpress</span>
+</p>
+<p  >
+    nbsp;Zastąp <em>moja_aplikacja</em> nazwą swojej aplikacji i zastąp
+    <em>.\SQLExpress</em> lokalizacją bazy danych na serwerze.
+</p><p  >
+    3.nbsp;nbsp;&nbsp; Zlokalizuj plik web.config w podkatalogu Pliki aplikacji 
+    publikowanych danych wyjściowych.
+</p>
+<p  >
+    a.nbsp;nbsp;&nbsp;&nbsp; Otwórz plik web.config w Notatniku i zmień połączenie w sekcji
+    &lt;connectionStrings&gt;, <connectionstrings>
+         aby użyć nazwy serwera i nazwy baza danych. Na
+        przykład, dla wpisu podobnego do:
+</p>
+<p  >
+    &lt;add name=&quot;_IntrinsicData&quot; connectionString=&quot;Data
+    Source=SERVERNAME\SQLEXPRESS;Initial Catalog=MyApplication;Integrated
+    Security=True;Pooling=True;Connect Timeout=30;User Instance=False&quot; /&gt;
+</p>
+<p  >
+    Zastąp <em>SERVERNAME</em> nazwą serwera bazy danych, a <em>
+        <em>MyApplication</em>
+    </em>nazwą swojej aplikacji.
+</p>
+<p  >
+    4<em>
+        .&nbsp;&nbsp;&nbsp;
+    </em>
+    Uruchom plik Setup.exe na komputerze docelowym,
+    aby zainstalować aplikację.
+</p>

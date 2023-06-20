@@ -1,0 +1,1007 @@
+<!--
+***********************************************************************************************
+Microsoft.LightSwitch.Build.Tasks.targets
+
+WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and have
+          created a backup copy.  Incorrect changes to this file will make it
+          impossible to load or build your projects from the command-line or the IDE.
+
+This file defines the steps in the standard build process specific for SMB projects.
+
+Copyright (C) Microsoft Corporation. All rights reserved.
+***********************************************************************************************
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="Microsoft.LightSwitch.Common.targets" />
+  <UsingTask TaskName="LSSvcGeneratorsTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="LSResourceGeneratorsTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="LSCodeGeneratorsTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="LSFilesToXapTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="UpdateRuntimeConfigFile"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="LSXapFileReplacementTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="LSCleanTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="FilterSatellitePathsTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="SupportedCulturesTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="FindMinificationToolTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="BundleGeneratorTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="ErrorReporterTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="ConvertServerResourcesToJScriptResourcesTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+  <UsingTask TaskName="ValidateMatchingCulturesTask"
+             AssemblyFile="$(LightSwitchTasksPath)"/>
+
+  <PropertyGroup>
+    <PrepareResourcesDependsOn>
+      <!--CopyDataFiles; -->
+      LSSvcGenerators;
+      LSResourceGenerators;
+      $(PrepareResourcesDependsOn)
+    </PrepareResourcesDependsOn>
+  </PropertyGroup>
+
+  <!-- CoreCompile is redefined to be empty in JavaScript projects. So, we run LSCodeGenerators as part of PrepareResources. -->
+  <PropertyGroup Condition="'$(LightSwitchProjectSubType)'=='JScript'">
+    <PrepareResourcesDependsOn>
+      $(PrepareResourcesDependsOn);
+      LSCodeGenerators
+    </PrepareResourcesDependsOn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Clean Include="$(OutDir)\..\..\..\bin\$(Configuration)\App_Data\DevelopmentDatabase.mdf"
+           Condition="'$(LightSwitchProjectTypeV45)'=='Client'" />
+    <Clean Include="$(OutDir)\..\..\..\bin\$(Configuration)\App_Data\DevelopmentDatabase_log.ldf"
+           Condition="'$(LightSwitchProjectTypeV45)'=='Client'" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(LightSwitchProjectTypeV45)'=='Server'">
+    <CoreCompileDependsOn>
+      LSCodeGenerators;
+      $(CoreCompileDependsOn)
+    </CoreCompileDependsOn>
+    <CleanDependsOn>
+      $(CleanDependsOn);
+      <!-- We need to check the mcs files after the screen, so make sure we put LSClean after $(CleanDependsOn); -->
+      LSClean
+    </CleanDependsOn>
+  </PropertyGroup>
+
+  <!-- Temporary: Include service metadata in client XAP -->
+  <PropertyGroup Condition="'$(LightSwitchProjectTypeV45)'=='Client'">
+    <CoreCompileDependsOn>
+      LSCodeGenerators;
+      LocateServiceMetadata;
+      PackageServiceMetadata;
+      $(CoreCompileDependsOn)
+    </CoreCompileDependsOn>
+    <CleanDependsOn>
+      RemoveServiceMetadata;
+      $(CleanDependsOn);
+      <!-- We need to check the mcs files after the screen, so make sure we put LSClean after $(CleanDependsOn); -->
+      LSClean
+    </CleanDependsOn>
+  </PropertyGroup>
+
+  <Target Name="PackageServiceMetadata">
+    <Delete Files="$(OutDir)\ServiceMetadataFiles.txt" ContinueOnError="true" />
+          
+    <!-- Transform the names of the service metadata files to ensure they will be unique in the XAP -->
+    <ItemGroup>
+      <_ServiceMetadataFiles Include="@(ServiceMetadataFiles)">
+        <TargetPath>$([System.String]::new(%(ServiceMetadataFiles.Identity)).Replace('\', '.').Trim('.'))</TargetPath>
+      </_ServiceMetadataFiles>
+    </ItemGroup>
+    
+    <WriteLinesToFile File="$(OutDir)\ServiceMetadataFiles.txt" Lines="%(_ServiceMetadataFiles.TargetPath)" />
+
+    <ItemGroup Condition="'$(LightSwitchProjectTypeV45)'=='Client'">
+      <XapFilesInputCollection Include="@(_ServiceMetadataFiles)" />
+      <XapFilesInputCollection Include="$(OutDir)\ServiceMetadataFiles.txt" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="RemoveServiceMetadata">
+    <Delete Files="$(OutDir)\ServiceMetadataFiles.txt" ContinueOnError="true" />
+  </Target>
+
+  <Target Name="LocateServiceMetadata">
+    <MSBuild Projects="@(ServiceMetadataReference)"
+             Targets="GetModelFiles"
+             ContinueOnError="true"
+             RebaseOutputs="true">
+      <Output TaskParameter="TargetOutputs" ItemName="ServiceMetadataFiles" />
+    </MSBuild>
+  </Target>
+
+  <!--
+    =====================================================================================
+                                    LSClean
+    Hooks up the clean event so the code generators will clear their cached code buffer.
+    ======================================================================================
+    -->
+  <Target Name="LSClean">
+    <LSCleanTask IsBuildingInsideVisualStudio="$(BuildingInsideVisualStudio)"
+                 ProjectGuid="$(ProjectGuid)"
+                 LightSwitchProjectType="$(LightSwitchProjectTypeV45)">
+    </LSCleanTask>
+  </Target>
+
+  <!--
+    =====================================================================================
+                                    LSSvcGenerators
+    Generates the OData .svc files and copies them to a GeneratedSvcFiles folder so they can
+    be consumed by the root project.
+    ======================================================================================
+    -->
+  <PropertyGroup>
+    <LSSvcGeneratorsDependsOn>
+    </LSSvcGeneratorsDependsOn>
+  </PropertyGroup>
+  <Target Name="LSSvcGenerators"
+          Condition="'$(LightSwitchProjectTypeV45)'=='Server'"
+          DependsOnTargets="$(LSSvcGeneratorsDependsOn)">
+
+    <!--
+        In order to place the correct .svc files into the root project's $(OutDir), put the generated .svc
+        files into a specific GeneratedSvcFiles folder.  Then, the root project can get the correct
+        generated files through the 'GetSvcFiles' task below.
+        - Can't just use GeneratedArtifacts\*.svc because there may be old, unnecessary .svc files leftover, 
+        ex. from old Data Sources, or because of a rename.
+        - Can't delete GeneratedArtifacts\*.svc before calling the generator because the generator may choose
+        to not generate the file if it thinks it is up to date.
+        -->
+    <RemoveDir Directories="$(MSBuildProjectDirectory)\GeneratedArtifacts\GeneratedSvcFiles\" />
+    <MakeDir Directories="$(MSBuildProjectDirectory)\GeneratedArtifacts\GeneratedSvcFiles\" />
+
+    <LSSvcGeneratorsTask Inputs="@(LightSwitchModel)"
+                         IsRebuild="$(LSCodeGenFromRebuild)"
+                         IsBuildingInsideVisualStudio="$(BuildingInsideVisualStudio)"
+                         LightSwitchProjectType="$(LightSwitchProjectTypeV45)"
+                         LightSwitchProjectSubType="$(LightSwitchProjectSubType)"
+                         ProjectPath="$(MSBuildProjectFullPath)"
+                         ProjectOutputPath="$(OutDir)"
+                         ProjectGuid="$(ProjectGuid)"
+                         ExternalDataSources="@(ServerExternalDataSources)">
+      <Output ItemName="FileWrites"
+              TaskParameter="ModelChecksums" />
+      <Output ItemName="FileWrites"
+              TaskParameter="SvcFiles" />
+      <Output ItemName="GeneratedSvcFiles"
+              TaskParameter="SvcFiles" />
+    </LSSvcGeneratorsTask>
+
+    <Copy SourceFiles="@(GeneratedSvcFiles)"
+          DestinationFolder="$(MSBuildProjectDirectory)\GeneratedArtifacts\GeneratedSvcFiles\" />
+
+    <Message Text="(Out) GeneratedSvcFiles: '@(GeneratedSvcFiles)'"/>
+  </Target>
+
+  <Target Name="GetSvcFiles"
+      Outputs="@(GeneratedSvcFiles)">
+    <CreateItem Include="$(MSBuildProjectDirectory)\GeneratedArtifacts\GeneratedSvcFiles\*.svc">
+      <Output TaskParameter="Include"
+              ItemName="GeneratedSvcFiles" />
+    </CreateItem>
+  </Target>
+
+  <!--
+    =====================================================================================
+                                    LSResourceGenerators
+    Generates the EF metadata files (csdl, ssdl, msdl) and includes them as embedded
+    resources for the server project.
+    Also, run the csdl generator for the ClientGenerated project, so code gen can take
+    advantage of it.
+    ======================================================================================
+    -->
+  <PropertyGroup>
+    <LSResourceGeneratorsDependsOn>
+      LocateServiceMetadata;
+    </LSResourceGeneratorsDependsOn>
+  </PropertyGroup>
+  <Target Name="LSResourceGenerators"
+          Condition="'$(LightSwitchProjectTypeV45)'=='Server' Or '$(LightSwitchProjectTypeV45)'=='Client'"
+          DependsOnTargets="$(LSResourceGeneratorsDependsOn)">
+
+    <LSResourceGeneratorsTask Inputs="@(LightSwitchModel)"
+                              ServiceModelFiles="@(ServiceMetadataFiles)"
+                              IsRebuild="$(LSCodeGenFromRebuild)"
+                              IsBuildingInsideVisualStudio="$(BuildingInsideVisualStudio)"
+                              LightSwitchProjectType="$(LightSwitchProjectTypeV45)"
+                              LightSwitchProjectSubType="$(LightSwitchProjectSubType)"
+                              ProjectPath="$(MSBuildProjectFullPath)"
+                              Parameters="Configuration=$(Configuration)"
+                              ProjectOutputPath="$(OutDir)"
+                              ProjectGuid="$(ProjectGuid)"
+                              ExternalDataSources="@(ServerExternalDataSources)">
+      <Output ItemName="FileWrites"
+              TaskParameter="ModelChecksums" />
+      <Output ItemName="EmbeddedResource"
+              TaskParameter="Resources"
+              Condition="'$(LightSwitchProjectTypeV45)'=='Server'" />
+      <Output ItemName="FileWrites"
+              TaskParameter="Resources" />
+      <Output ItemName="GeneratedMetadataFiles"
+              TaskParameter="Resources" />
+    </LSResourceGeneratorsTask>
+
+    <Message Text="(Out) GeneratedMetaDataFiles: '@(GeneratedMetadataFiles)'"/>
+  </Target>
+  <!--
+    ===============================================================================================
+                                        LSCodeGenerators
+    Generates the codefiles for the LS Project flavors. It also defines a dependency on the
+    LSResourceGenerators as the some of the generators requires csdl file as input.
+    ===============================================================================================
+    -->
+  <PropertyGroup>
+    <LSCodeGeneratorsDependsOn>
+      LocateServiceMetadata;
+      LSResourceGenerators;
+    </LSCodeGeneratorsDependsOn>
+  </PropertyGroup>
+
+  <Target Name="LSCodeGenerators"
+          DependsOnTargets="$(LSCodeGeneratorsDependsOn)"
+          Condition="'$(LightSwitchIntellisenseBuild)'!='True'">
+
+    <ItemGroup>
+      <ServerExternalDataSources Include="@(LightSwitchExternalDataSource)"/>
+    </ItemGroup>
+
+    <LSCodeGeneratorsTask Inputs="@(LightSwitchModel)"
+                          ServiceModelFiles="@(ServiceMetadataFiles)"
+                          IsRebuild="$(LSCodeGenFromRebuild)"
+                          IsBuildingInsideVisualStudio="$(BuildingInsideVisualStudio)"
+                          LightSwitchProjectType="$(LightSwitchProjectTypeV45)"
+                          LightSwitchProjectSubType ="$(LightSwitchProjectSubType)"
+                          ProjectPath="$(MSBuildProjectFullPath)"
+                          Parameters="Language=$(Language)"
+                          MetadataFiles="@(GeneratedMetadataFiles)"
+                          ProjectOutputPath="$(OutDir)"
+                          ProjectGuid="$(ProjectGuid)"
+                          ExternalDataSources="@(ServerExternalDataSources)">
+      <Output ItemName="FileWrites"
+              TaskParameter="ModelChecksums" />
+      <Output ItemName="Compile"
+              TaskParameter="CodeFiles" />
+      <Output ItemName="GeneratedCodeFiles"
+              TaskParameter="CodeFiles" />
+      <Output ItemName="FileWrites"
+              TaskParameter="CodeFiles" />
+    </LSCodeGeneratorsTask>
+    <PropertyGroup>
+      <LSCodeGenFromRebuild>false</LSCodeGenFromRebuild>
+    </PropertyGroup>
+    <Message Text="(Out) GeneratedCodeFiles: '@(GeneratedCodeFiles)'"/>
+  </Target>
+
+  <!-- Adds the data and config files to the collection of files to be XAPed. -->
+  <ItemGroup Condition="'$(LightSwitchProjectTypeV45)'=='Client'">
+    <XapFilesInputCollection Include="@(AppConfigFile)" />
+    <!--<XapFilesInputCollection Include="@(LightSwitchModel)" />-->
+  </ItemGroup>
+
+  <!-- Include model metadata files as embedded resources -->
+  <ItemGroup Condition="'$(LightSwitchProjectTypeV45)'=='Server'">
+    <EmbeddedResource Include="@(LightSwitchModel)" >
+      <!-- Include the path in the resource name so it is unique -->
+      <LogicalName>%(Identity)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- We do not want to include model metadata file as embedded resource as it contains proxies to server stuff. Instead we generate
+  a new metadata file which contains all proxies expanded.-->
+  <ItemGroup Condition="'$(LightSwitchProjectTypeV45)'=='Client' And '$(LightSwitchProjectSubType)'=='Silverlight'">
+    <EmbeddedResource Include="$(MSBuildProjectDirectory)\GeneratedArtifacts\ClientRuntime.lsml" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(LightSwitchProjectTypeV45)'=='Client' And '$(LightSwitchProjectSubType)'=='Silverlight'">
+    <FilesToXapDependsOn>
+      $(FilesToXapDependsOn);LSFilesToXap;
+    </FilesToXapDependsOn>
+    <XapPackagerDependsOn>
+      $(XapPackagerDependsOn);ReplacePortableAssembliesInXap
+    </XapPackagerDependsOn>
+    <ResolveReferencesDependsOn>IncludeClientDesignTimeAssemblies;$(ResolveReferencesDependsOn)</ResolveReferencesDependsOn>
+  </PropertyGroup>
+
+  <!-- Adds the Rebuild Flag to let the generator to regenerate the code, regardless the optimization setting -->
+  <PropertyGroup>
+    <RebuildDependsOn>
+      LSBeforeRebuild;
+      $(RebuildDependsOn)
+    </RebuildDependsOn>
+    <LSCodeGenFromRebuild>false</LSCodeGenFromRebuild>
+  </PropertyGroup>
+
+
+  <!--
+    ======================================================================================
+                                        LSBeforeRebuild
+    Sets LSCodeGenFromRebuild dynamic property, used by LSCodeGenerators target
+    ======================================================================================
+    -->
+  <Target Name="LSBeforeRebuild">
+    <PropertyGroup>
+      <LSCodeGenFromRebuild>true</LSCodeGenFromRebuild>
+    </PropertyGroup>
+  </Target>
+
+  <!--
+    ======================================================================================
+                                        LSFilesToXap
+    Adds the client manifestfiles, resource files to the collection of files to be XAPed.
+    ======================================================================================
+    -->
+  <Target Name="LSFilesToXap"
+          Condition="'$(LightSwitchProjectTypeV45)'=='Client'">
+    <LSFilesToXapTask InstallDirectory="$(LightSwitchSDKPath)">
+      <Output ItemName="XapFilesInputCollection"
+              TaskParameter="XapFilesCollection" />
+      <Output ItemName="_LSXapFilesCollection"
+              TaskParameter="XapFilesCollection" />
+    </LSFilesToXapTask>
+    <Message Text="LSFilesToXapTask Output: '@(_LSXapFilesCollection)'" Importance="Low"/>
+  </Target>
+
+  <!--
+    ======================================================================================
+                               ReplacePortableAssembliesInXap
+    Replaces portable assemblies with their Silverlight-only versions.
+    ======================================================================================
+    -->
+
+  <Target Name="ReplacePortableAssembliesInXap"
+          Condition="'$(LightSwitchProjectTypeV45)'=='Client'">
+    <ItemGroup>
+      <!-- The list of assemblies that have a special silverlight version to use. -->
+      <PortableAssembliesWithSilverlightVersion Include="$(LightSwitchSDKPath)\Client\NonPortable\Microsoft.LightSwitch.dll"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <XapFilesInputCollection Remove="@(XapFilesInputCollection)" Condition="'%(Filename)%(Extension)' == @(PortableAssembliesWithSilverlightVersion->'%(Filename)%(Extension)')" />
+      <XapFilesInputCollection Include="@(PortableAssembliesWithSilverlightVersion)" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    =====================================================================================
+    BuildRuntimeConfigFile
+
+    This task takes the existing Config.xml file in the project and appends
+    additional manifests, subsystems, and user code assemblies into the file before
+    it gets packaged into the XAP
+    ======================================================================================
+    -->
+
+  <PropertyGroup Condition="'$(LightSwitchProjectTypeV45)'=='Client' And '$(LightSwitchProjectSubType)'=='Silverlight'">
+    <CreateSilverlightAppManifestDependsOn>IncludeDesignTimeAssemblies;ExcludeDesignTimeAssemblies;BuildRuntimeConfigFile;$(CreateSilverlightAppManifestDependsOn)</CreateSilverlightAppManifestDependsOn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(LightSwitchProjectTypeV45)'=='Client' and '$(UseDesignTimeFeatures)'=='true'">
+
+    <DesignTimeFeatureManifests Include="Microsoft.LightSwitch.RuntimeEditor.Internal.Manifest.xml" />
+    <DesignTimeFeatureManifests Include="Microsoft.VisualStudio.Debugger.Runtime.Dll.Manifest.xml" />
+    <DesignTimeFeatureSubsystems Include="RuntimeEditLoader" />
+    <DesignTimeFeatureSubsystems Include="AppBridgeLoader" />
+
+  </ItemGroup>
+
+  <Target
+      Name="IncludeDesignTimeAssemblies"
+      Condition="'$(LightSwitchProjectTypeV45)'=='Client' and '$(UseDesignTimeFeatures)'=='true'"
+      DependsOnTargets="$(IncludeDesignTimeAssembliesDependsOn)">
+
+    <ItemGroup>
+
+      <XapFilesInputCollection Include="$(LightSwitchSDKPath)\Client\Microsoft.VisualStudio.Debugger.Runtime.Dll.dll"/>
+      <_SilverlightPackagedAssemblies Include="$(LightSwitchSDKPath)\Client\Microsoft.VisualStudio.Debugger.Runtime.Dll.dll"/>
+    </ItemGroup>
+
+    <!-- Add DebugOnly Extension references to the XAP -->
+    <ItemGroup>
+      <DesignTimeReferencesToInclude Include="%(Reference.HintPath)" Condition="'%(Reference.ExtensionReferenceType)' == 'DebugOnly'"/>
+    </ItemGroup>
+
+    <ConvertToAbsolutePath Paths="@(DesignTimeReferencesToInclude)">
+      <Output TaskParameter="AbsolutePaths" ItemName="DesignTimeReferencesToIncludeAbsolutePaths"/>
+    </ConvertToAbsolutePath>
+
+  </Target>
+
+  <!--
+    =====================================================================================
+                                   AfterResolveReferences
+   This gets called as part of ResolveReferences. During ResolveAssemblyReferences (part of resolve references),
+   complete closure is performed on the assemblies references. This also involves finding satellite assemblies
+   for referenced assemblies. When this target is called list of referenced assemblies and their satellites
+   are available. Following is accomplished during this target
+   1. Get the supported cultures information from project.
+   2. Filter satellite assemblies based on supported cultures above.
+   3. For server write the referenced assemblies and their satellites information as this information
+   is used by root project to perform copy.
+    ======================================================================================
+    -->
+  <Target Name="AfterResolveReferences"
+          Condition="('@(ReferenceSatellitePaths)' != '') and 
+                     ('$(LightSwitchProjectTypeV45)'=='Server' Or '$(LightSwitchProjectTypeV45)'=='Client')">
+
+    <SupportedCulturesTask SupportedCulturesProperty="$(SupportedCultures)">
+      <Output ItemName="SupportedLocals"
+              TaskParameter="SupportedCultures" />
+    </SupportedCulturesTask>
+
+    <FilterSatellitePathsTask Inputs="@(ReferenceSatellitePaths)"
+                              SupportedCultures="@(SupportedLocals)"
+                              Condition="'@(SupportedLocals)' != ''">
+      <Output ItemName="SatellitePaths"
+              TaskParameter="FilteredPaths" />
+    </FilterSatellitePathsTask>
+
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Remove="@(ReferenceSatellitePaths)"/>
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(LightSwitchProjectTypeV45)'=='Server'">
+      <CopyLocalPathsList Include="$(OutDir)\CopyLocalPaths.txt"/>
+      <SatellitePathsList Include="$(OutDir)\SatellitePaths.txt"/>
+    </ItemGroup>
+
+    <WriteLinesToFile
+           Condition="'$(LightSwitchProjectTypeV45)'=='Server'"
+           File="@(CopyLocalPathsList)"
+           Lines="@(ReferenceCopyLocalPaths)"
+           Overwrite="true"/>
+
+    <WriteLinesToFile
+          Condition="'$(LightSwitchProjectTypeV45)'=='Server'"
+          File="@(SatellitePathsList)"
+          Lines="@(SatellitePaths)"
+          Overwrite="true"/>
+
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Include="@(SatellitePaths)" Condition="'@(SatellitePaths)' != ''"/>
+    </ItemGroup>
+
+  </Target>
+
+  <PropertyGroup Condition="'$(LightSwitchProjectTypeV45)'=='Client' and '$(LightSwitchProjectSubType)'=='JScript'">
+    <CoreBuildDependsOn>$(CoreBuildDependsOn);CreateGeneratedAssets</CoreBuildDependsOn>
+  </PropertyGroup>
+
+  <!-- 
+   =====================================================================================
+                                   CreateGeneratedAssets
+   This gets called during build of HTML project. It creates appropriate generatedAssets.js
+   based on the configuration. For Debug configuration, generatedAssets.js includes script
+   references to data.js, viewModel.js & usercode.js. Under Release configuration, individual files;
+   data.js, viewModel.js & any js file under UserCode are concatnated into one file and minified.
+   ======================================================================================
+  -->
+  <Target
+     Name="CreateGeneratedAssets"
+     Condition="'$(LightSwitchProjectTypeV45)'=='Client' and '$(LightSwitchProjectSubType)'=='JScript'"
+     DependsOnTargets="">
+
+    <!--Find path to minification tool under product setup path. -->
+    <FindMinificationToolTask BasePath="$(MinificationToolBasePath)"
+                             Condition="'$(UseDesignTimeFeatures)'!='true'">
+      <Output ItemName="MinificationToolPath"
+           TaskParameter="ToolPath" />
+    </FindMinificationToolTask>
+
+    <!--Set the mode to minify or non-minified.-->
+    <PropertyGroup>
+      <Minify>false</Minify>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(UseDesignTimeFeatures)'!='true' and Exists('@(MinificationToolPath)')">
+      <Minify>true</Minify>
+    </PropertyGroup>
+
+    <!--Concatenate user code files into one file in case minification tool is not available and build configuration 
+    is Release.-->
+    <ItemGroup>
+      <ExcludedUserCode Include="UserCode\*.js;Screens\**\*.js " Exclude="@(Content)" />
+      <UserCodeBundle Include="UserCode\*.js;Screens\**\*.js" Exclude="@(ExcludedUserCode)" />
+    </ItemGroup>
+
+    <BundleGeneratorTask Inputs="@(UserCodeBundle)"
+                         BundlePath="GeneratedArtifacts\usercode.js"
+                         Condition="'$(UseDesignTimeFeatures)'!='true' and !Exists('@(MinificationToolPath)')"/>
+
+    <ItemGroup>
+      <JSBundle Include="GeneratedArtifacts\data.js" />
+      <JSBundle Include="GeneratedArtifacts\viewModel.js" />
+      <JSBundle Include="GeneratedArtifacts\usercode.js" Condition="'$(Minify)'!='true'"/>
+      <JSBundle Include="@(UserCodeBundle)" Condition="'$(Minify)'=='true'"/>
+    </ItemGroup>
+
+    <!--Add script references to generatedAssets.js in case of non-minified mode.-->
+    <ItemGroup Condition="'$(Minify)'!='true'">
+      <GeneratedAssetsLines Remove="@(GeneratedAssetsLines)" />
+      <GeneratedAssetsLines Include="// Warning: AutoGenerated file, Don't edit." />
+      <GeneratedAssetsLines Include="@(JSBundle->'document.writeln(&quot;&lt;script type=\&quot;text/javascript\&quot; src=\&quot;Scripts/Generated/%(FileName)%(Extension)\&quot;>&lt;/script>&quot;);')"/>
+    </ItemGroup>
+
+    <MakeDir Directories="$(OutDir)\Generated"  Condition="!Exists('$(OutDir)\Generated')"/>
+
+    <WriteLinesToFile
+            Condition="'$(Minify)'!='true'"
+            File="$(OutDir)\Generated\generatedAssets.js"
+            Lines="@(GeneratedAssetsLines)"
+            Overwrite="true"
+            Encoding="UTF-8" />
+
+    <!--In case of minify mode, concatenate individual files into one file and call minification tool on concatnated file. 
+    In case any error report it.-->
+    <BundleGeneratorTask Inputs="@(JSBundle)"
+                          BundlePath="$(OutDir)\Generated\generatedAssets.tmp.js"
+                          Condition="'$(Minify)'=='true'"/>
+
+    <!--Use quot as minification tool path might contain white spaces. -->
+    <Microsoft.Build.Tasks.Exec Command="&quot;%(MinificationToolPath.Identity)&quot; -m -in:$(OutDir)\Generated\generatedAssets.tmp.js -out:$(OutDir)\Generated\generatedAssets.js > $(OutDir)\Generated\error.txt"
+                                Condition="'$(Minify)'=='true'"/>
+
+    <ErrorReporterTask Inputs="@(JSBundle)" ErrorLogPath="$(OutDir)\Generated\error.txt"
+                       Condition="'$(Minify)'=='true'"/>
+
+    <Delete Files="$(OutDir)\Generated\generatedAssets.tmp.js" Condition="'$(Minify)'=='true' and Exists('$(OutDir)\Generated\generatedAssets.tmp.js')" />
+  </Target>
+
+  <!--
+    =====================================================================================
+    IncludeClientDesignTimeAssemblies
+
+    This target adds references for design time assemblies (like the runtime editor)
+    for the Client project
+    ======================================================================================
+    -->
+
+  <Target
+      Name="IncludeClientDesignTimeAssemblies"
+      Condition="'$(LightSwitchProjectTypeV45)'=='Client' and '$(UseDesignTimeFeatures)'=='true'"
+      DependsOnTargets="">
+
+    <ItemGroup>
+      <Reference Include="$(LightSwitchSDKPath)\Client\Microsoft.LightSwitch.RuntimeEditor.Internal.dll"/>
+    </ItemGroup>
+  </Target>
+
+
+  <!--
+    =====================================================================================
+    IncludeServerDesignTimeAssemblies
+
+    This target adds references for design time features (like the appbridge)
+    to the Server project
+    ======================================================================================
+    -->
+
+  <PropertyGroup Condition="'$(LightSwitchProjectTypeV45)'=='Server'">
+    <IncludeServerDesignTimeAssembliesDependsOn></IncludeServerDesignTimeAssembliesDependsOn>
+    <ResolveReferencesDependsOn>IncludeServerDesignTimeAssemblies;$(ResolveReferencesDependsOn)</ResolveReferencesDependsOn>
+  </PropertyGroup>
+
+  <Target
+      Name="IncludeServerDesignTimeAssemblies"
+      Condition="'$(LightSwitchProjectTypeV45)'=='Server' and '$(UseDesignTimeFeatures)'=='true'"
+      DependsOnTargets="$(IncludeServerDesignTimeAssembliesDependsOn)">
+
+    <ItemGroup>
+      <Reference Include="Microsoft.LightSwitch.AppBridge">
+        <HintPath>$(LightSwitchSDKPath)\Server\Microsoft.LightSwitch.AppBridge.dll</HintPath>
+        <Private>True</Private>
+      </Reference>
+    </ItemGroup>
+  </Target>
+
+
+  <!--
+    =====================================================================================
+    ExcludeDesignTimeAssemblies
+
+    This target removes references for design time features
+    ======================================================================================
+    -->
+
+  <Target
+      Name="ExcludeDesignTimeAssemblies"
+      Condition="'$(LightSwitchProjectTypeV45)'=='Client' and '$(UseDesignTimeFeatures)'=='false'"
+      DependsOnTargets="$(ExcludeDesignTimeAssembliesDependsOn)">
+
+    <!-- Remove the debug only components if we're doing an Ctrl-F5 launch -->
+    <ItemGroup>
+      <DesignTimeReferencesToRemove Include="%(Reference.HintPath)" Condition="'%(Reference.ExtensionReferenceType)' == 'DebugOnly'"/>
+    </ItemGroup>
+
+    <ConvertToAbsolutePath Paths="@(DesignTimeReferencesToRemove)">
+      <Output TaskParameter="AbsolutePaths" ItemName="DesignTimeReferencesAbsolutePaths"/>
+    </ConvertToAbsolutePath>
+
+    <ItemGroup>
+      <Reference Remove="@(DesignTimeReferencesAbsolutePaths)" />
+      <ReferenceCopyLocalPaths Remove="@(DesignTimeReferencesAbsolutePaths)"/>
+
+      <XapFilesInputCollection Remove="@(DesignTimeReferencesAbsolutePaths)"/>
+      <_SilverlightPackagedAssemblies Remove="@(DesignTimeReferencesAbsolutePaths)"/>
+    </ItemGroup>
+  </Target>
+
+  <Target
+      Name="BuildRuntimeConfigFile"
+      Condition="'$(LightSwitchProjectTypeV45)'=='Client'"
+      DependsOnTargets="$(BuildRuntimeConfigFileDependsOn)">
+
+    <!-- Define the user code assemblies that will go into the Config.xml file -->
+    <ItemGroup>
+      <LightSwitchUserCodeAssembly Include="$(OutDir)\$(AssemblyName)"/>
+    </ItemGroup>
+
+    <UpdateRuntimeConfigFile ConfigFileName="@(ClientResource)"
+                             OutputConfigFileName="$(OutDir)\Config.xml"
+                             UserCodeAssemblies="@(LightSwitchUserCodeAssembly)"
+                             ExtensionAssemblies="@(DesignTimeReferencesToIncludeAbsolutePaths)"
+                             ManifestFiles="@(DesignTimeFeatureManifests)"
+                             SubsystemPackages="@(DesignTimeFeatureSubsystems)"
+                             ProjectFile="$(MSBuildProjectFullPath)"
+                             ApplicationCulture="$(DefaultLanguage)"
+                             SupportedCultures="$(SupportedCultures)"/>
+
+    <ItemGroup>
+      <XapFilesInputCollection Include="$(OutDir)\Config.xml" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Override the XapPackager target normally found in the Microsoft.Silverlight.Common.targets file -->
+
+  <Target Name="XapPackager"
+        DependsOnTargets="$(XapPackagerDependsOn)"
+        Condition="'$(XapOutputs)'=='true'"
+        Outputs="$(XapOutputFile)">
+
+    <PropertyGroup>
+      <UseXAPInPlaceReplacement>true</UseXAPInPlaceReplacement>
+      <UseXAPInPlaceReplacement Condition=" '$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\VisualStudio\12.0\LightSwitch@UseXAPInPlaceReplacement)' == '0' ">false</UseXAPInPlaceReplacement>
+    </PropertyGroup>
+
+    <XapPackager
+        InputFiles="@(XapFilesInputCollection)"
+        ProjectPath="$(MSBuildProjectFullPath)"
+        XapFileName="$(XapFilename)"
+        OutputPath="$(OutDir)"
+        IntermediateOutputPath="$(IntermediateOutputPath)"
+        SignXap="false"
+        Condition=" '$(UseXAPInPlaceReplacement)' == 'false' ">
+
+      <!--Add to Clean-->
+      <Output ItemName="FileWrites" TaskParameter="XapOutputFile" />
+      <Output ItemName="FileWrites" TaskParameter="XapFileCache" />
+    </XapPackager>
+
+    <LSXapFileReplacementTask
+        XapOutputFile="$(OutDir)\$(XapFilename)"
+        Files="@(XapFilesInputCollection)"
+        XapFileCache="$(OutDir)\XapCache.tmp"
+        SkipMissingFiles="false"
+        Condition=" '$(UseXAPInPlaceReplacement)' == 'true' ">
+
+      <!--Add to Clean-->
+      <Output ItemName="FileWrites" TaskParameter="XapOutputFile" />
+      <Output ItemName="FileWrites" TaskParameter="XapFileCache" />
+    </LSXapFileReplacementTask>
+  </Target>
+
+
+  <!--
+    ======================================================================================
+                               FilesToPreXap
+    This task is used to determine the contents for a XAP file shortly after a project
+    is created to improve F5 perf.
+    ======================================================================================
+    -->
+
+  <PropertyGroup>
+    <FilesToPreXapDependsOn>CategorizeSilverlightReferences</FilesToPreXapDependsOn>
+  </PropertyGroup>
+  <Target
+      Name="FilesToPreXap"
+      Outputs="@(XapFilesInputCollection)"
+      DependsOnTargets="$(FilesToPreXapDependsOn)">
+
+    <ItemGroup>
+      <!-- Include the built output, satellites and content files-->
+      <XapFilesInputCollection Include="@(BuiltProjectOutputGroupKeyOutput)"/>
+      <XapFilesInputCollection Include="@(_SilverlightPackagedAssemblies)" />
+      <XapFilesInputCollection Include="@(_SilverlightPackagedSatelliteAssemblies)" />
+      <XapFilesInputCollection Include="@(ContentWithTargetPath)"/>
+      <XapFilesInputCollection Include="$(AppManifestFilename)"/>
+    </ItemGroup>
+
+  </Target>
+
+  <!--
+    ======================================================================================
+                               PreProcessXapPackager
+    This task is used to create a XAP file shortly after a project is created to improve F5 perf.
+    ======================================================================================
+    -->
+
+  <PropertyGroup>
+    <PreProcessXapPackagerDependsOn>FilesToPreXap;IncludeDesignTimeAssemblies;LSFilesToXap;ReplacePortableAssembliesInXap</PreProcessXapPackagerDependsOn>
+  </PropertyGroup>
+  <Target Name="PreProcessXapPackager"
+        Condition="'$(XapOutputs)'=='true'"
+        Outputs="$(XapOutputFile)"
+        DependsOnTargets="$(PreProcessXapPackagerDependsOn)">
+
+    <LSXapFileReplacementTask
+        XapOutputFile="$(MSBuildProjectDirectory)\$(OutDir)\$(XapFilename)"
+        Files="@(XapFilesInputCollection)"
+        XapFileCache="$(MSBuildProjectDirectory)\$(OutDir)\XapCache.tmp"
+        SkipMissingFiles="true">
+
+      <!--Add to Clean-->
+      <Output ItemName="FileWrites" TaskParameter="XapOutputFile" />
+      <Output ItemName="FileWrites" TaskParameter="XapFileCache" />
+    </LSXapFileReplacementTask>
+  </Target>
+
+  <Target Name="GetClientBuildFilePath"
+             Outputs="@(_ClientBuildOutputFile)">
+    <PropertyGroup>
+      <ClientProjectName Condition=" '$(ClientProjectName)' == '' ">$(MSBuildProjectName)</ClientProjectName>
+    </PropertyGroup>
+
+    <!-- OutDir in TeamBuild is rooted, where locally it isn't. Added a check to drop the 
+          MSBuildProjectDirectory path if OutDir is a full path -->
+    <PropertyGroup Condition=" '$([System.IO.Path]::IsPathRooted($(OutDir)))'=='true' ">
+      <OutputDir>$(OutDir)</OutputDir>
+    </PropertyGroup>
+    <PropertyGroup Condition=" '$([System.IO.Path]::IsPathRooted($(OutDir)))'!='true' ">
+      <OutputDir>$(MSBuildProjectDirectory)\$(OutDir)</OutputDir>
+    </PropertyGroup>
+
+    <ItemGroup Condition=" '$(LightSwitchProjectSubType)' == 'JScript' ">
+      <_ClientBuildOutputFile Include="@(Content -> '$([System.IO.Directory]::GetParent($(MSBuildProjectFullPath)).Name)\%(Identity)')">
+        <SubFolder>$(ClientProjectName)\$([System.IO.Path]::GetDirectoryName(%(Identity)))</SubFolder>
+      </_ClientBuildOutputFile>
+      <_ClientBuildOutputFile Include="$(OutputDir)Generated\generatedAssets.js">
+        <SubFolder>$(ClientProjectName)\Scripts\Generated</SubFolder>
+      </_ClientBuildOutputFile>
+    </ItemGroup>
+
+    <ItemGroup>
+      <_ClientBuildOutputFile Include="@(_ClientBuildFile -> '$([System.IO.Directory]::GetParent($(MSBuildProjectFullPath)).Name)\%(Identity)')">
+        <SubFolder>$(ClientProjectName)\%(_ClientBuildFile.SubFolder)</SubFolder>
+      </_ClientBuildOutputFile>
+    </ItemGroup>
+
+    <ItemGroup>
+      <_ClientBuildOutputFile Include="$(OutputDir)$(XapFilename)" Condition=" '$(LightSwitchProjectSubType)' == 'Silverlight' ">
+        <CopyLocal>true</CopyLocal>
+        <SubFolder>$(ClientProjectName)\web</SubFolder>
+        <ClientOutputXap>true</ClientOutputXap>
+      </_ClientBuildOutputFile>
+    </ItemGroup>
+
+    <Message Text="ClientBuildPath in GetClientBuildFilePath = @(_ClientBuildOutputFile)" />
+  </Target>
+
+  <Target Name="GetResJsonBuildFilePath"
+             Outputs="@(_ResJsonBuildOutputFile)">
+    <ItemGroup Condition=" '$(LightSwitchProjectSubType)' == 'JScript' ">
+      <_ResJsonBuildOutputFile Include="@(Content)"
+                               Condition="'%(RelativeDir)' == 'Content\Resources\' and '%(Extension)' == '.resjson'">
+        <SubFolder>$(ClientProjectName)\Content\Resources</SubFolder>
+      </_ResJsonBuildOutputFile>
+    </ItemGroup>
+
+  </Target>
+
+  <!-- If the project is a JScript project, this target returns a list of resource resjson files generated by the client project
+   -->
+  <Target Name="GetServiceResJsonFiles"
+          Condition=" '$(LightSwitchProjectSubType)' == 'JScript' "
+          Outputs="@(_ServiceResJsonFilesOutputs)">
+    <ItemGroup>
+      <_AllServerResourceOutput Remove="@(_AllServerResourceOutput)" />
+      <_ServerProjectReference Remove="@(_ServerProjectReference)" />
+      <_ServerProjectReference Include="$(ServerProjectReference)" />
+    </ItemGroup>
+
+    <!-- Execute MsBuild on ServerProjectReference to retreive a list of *.resx files -->
+    <MSBuild Projects="@(_ServerProjectReference)"
+             Targets="GetEmbeddedResourceFiles"
+             RebaseOutputs="True">
+      <Output TaskParameter="TargetOutputs"
+              ItemName="_AllServerResourceOutput"/>
+    </MSBuild>
+
+    <!-- Execute MsBuild on ServerProjectReference to retreive DefaultLanguage -->
+    <MSBuild Projects="@(_ServerProjectReference)"
+             Targets="GetDefaultLanguage">
+      <Output TaskParameter="TargetOutputs"
+              PropertyName="_ServerDefaultLanguage"/>
+    </MSBuild>
+
+    <!-- filter out non *.resx files -->
+    <ItemGroup>
+      <_ServerResourceFile Remove="@(_ServerResourceFile)" />
+      <_ServerResourceFile Include="@(_AllServerResourceOutput)" Condition="'%(Extension)'=='.resx'" />
+    </ItemGroup>
+
+    <!-- Execute ConvertServerResourcesToJScriptResourcesTask to convert Server side resources to *.resjson and then copy them to the Mobile Client -->
+    <ConvertServerResourcesToJScriptResourcesTask Inputs="@(LightSwitchModel)"
+                                   ProjectPath="$(MSBuildProjectFullPath)"
+                                   ServerResourceFiles="@(_ServerResourceFile)"
+                                   ServerDefaultLanguage="$(_ServerDefaultLanguage)"
+                                   SupportedCultures="$(SupportedCultures)"
+                                   ProjectConfiguration="$(Configuration)">
+      <Output TaskParameter="ResJsonFilesOutput"
+              ItemName="_MobileClientServiceResJsonFiles" />
+    </ConvertServerResourcesToJScriptResourcesTask>
+
+    <ItemGroup>
+      <_ServiceResJsonFilesOutputs Include="@(_MobileClientServiceResJsonFiles -> '%(Identity)')">
+        <SubFolder>$(ClientProjectName)\Content\Resources</SubFolder>
+      </_ServiceResJsonFilesOutputs>
+    </ItemGroup>
+  </Target>
+
+  <!-- Validate the supported cultures match between client and server -->
+  <Target Name="ValidateMatchingCultures">
+    <ItemGroup>
+      <_AllServerResourceOutput Remove="@(_AllServerResourceOutput)" />
+      <_ServerProjectReference Remove="@(_ServerProjectReference)" />
+      <_ServerProjectReference Include="$(ServerProjectReference)" />
+    </ItemGroup>
+
+    <!-- Execute MsBuild on ServerProjectReference to retreive a list of *.resx files -->
+    <MSBuild Projects="@(_ServerProjectReference)"
+             Targets="GetEmbeddedResourceFiles"
+             RebaseOutputs="True">
+      <Output TaskParameter="TargetOutputs"
+              ItemName="_AllServerResourceOutput"/>
+    </MSBuild>
+
+    <!-- filter out non *.resx files -->
+    <ItemGroup>
+      <_ServerResourceFile Remove="@(_ServerResourceFile)" />
+      <_ServerResourceFile Include="@(_AllServerResourceOutput)"
+                           Condition="'%(Extension)'=='.resx'" />
+    </ItemGroup>
+
+    <!-- Validate the client supports the same cultures as the server -->
+    <ValidateMatchingCulturesTask ClientProjectName="$(ClientProjectName)"
+                                  SupportedCultures="$(SupportedCultures)"
+                                  ServerResourceFiles="@(_ServerResourceFile)"/>
+
+  </Target>
+
+  <Target Name="GetSupportedMslsResJsonFiles"
+      Condition=" '$(LightSwitchProjectSubType)' == 'JScript' "
+      Outputs="@(_SupportedMslsResJsonFiles)">
+
+    <SupportedCulturesTask SupportedCulturesProperty="$(SupportedCultures)">
+      <Output ItemName="_SupportedCultures"
+              TaskParameter="SupportedCultures" />
+    </SupportedCulturesTask>
+
+    <ItemGroup>
+      <_ResJsonSupportedCultures Include="@(_SupportedCultures)" Condition="'@(_SupportedCultures)' != ''">
+        <lang>$([System.String]::new(%(Identity)).ToLowerInvariant())</lang>
+      </_ResJsonSupportedCultures>
+    </ItemGroup>
+
+    <Copy SourceFiles="$(LightSwitchSDKPath)\Client\msls.resjson"
+          DestinationFiles="$(OutDir)\Content\Resources\msls.lang-en-us.resjson"
+          SkipUnchangedFiles="true">
+      <Output TaskParameter="DestinationFiles" ItemName="_MobileClientSupportedMslsResJsonFiles"/>
+    </Copy>
+
+    <Copy SourceFiles="@(_ResJsonSupportedCultures -> '$(LightSwitchSDKPath)\Client\%(lang)\msls.resjson')"
+          DestinationFiles="@(_ResJsonSupportedCultures -> '$(OutDir)\Content\Resources\msls.lang-%(lang).resjson')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_ResJsonSupportedCultures)' != '' and '%(_ResJsonSupportedCultures.lang)' != 'en-us' and Exists('$(LightSwitchSDKPath)\Client\%(_ResJsonSupportedCultures.lang)\msls.resjson')">
+      <Output TaskParameter="DestinationFiles" ItemName="_MobileClientSupportedMslsResJsonFiles"/>
+    </Copy>
+
+    <ItemGroup>
+      <_SupportedMslsResJsonFiles Include="@(_MobileClientSupportedMslsResJsonFiles -> '%(Identity)')">
+        <SubFolder>$(ClientProjectName)\Content\Resources</SubFolder>
+      </_SupportedMslsResJsonFiles>
+    </ItemGroup>
+
+  </Target>
+
+  <!--
+    ======================================================================================
+                               GetResolvedReferencePath
+    This target gets called by the root project to retrieve this project's resolved references
+    ======================================================================================
+    -->
+  <Target Name="GetResolvedReferencePath"
+      Outputs="@(ReferencePath)">
+    <Message Text="ReferencePath in GetResolvedReferencePath = @(ReferencePath)" />
+  </Target>
+
+  <!--
+    ======================================================================================
+                           GetLightSwitchExternalDataSources
+    This target is called from the root project on the server project to get the 
+    LightSwichExternalDataSource items. These items are required as a part of the initialization
+    of the composition container (specifically in the initialization of MSBuildExternalDataSourceMetadataService.
+    ======================================================================================
+    -->
+  <Target Name="GetLightSwitchExternalDataSources"
+          Outputs="@(LightSwitchExternalDataSource)"
+          Condition="'$(LightSwitchProjectTypeV45)'=='Server'">
+  </Target>
+
+  <!--
+    ======================================================================================
+                           GetContentFiles
+    Returns the content files from the project.
+    ======================================================================================
+    -->
+  <Target Name="GetContentFiles"
+          Outputs="@(Content)">
+  </Target>
+
+  <!--
+    ======================================================================================
+                           GetEmbeddedResourceFiles
+    Returns the EmbeddedResource files from the project.
+    ======================================================================================
+    -->
+  <Target Name="GetEmbeddedResourceFiles"
+          Outputs="@(EmbeddedResource)">
+  </Target>
+
+  <!--
+    ======================================================================================
+                           GetDefaultLanguage
+    Returns the DefaultLanguage from the project.
+    ======================================================================================
+    -->
+  <Target Name="GetDefaultLanguage"
+          Outputs="$(DefaultLanguage)">
+  </Target>
+
+  <!--
+    ======================================================================================
+                           GetOutputPath
+    Returns the output path for the project.
+    ======================================================================================
+    -->
+  <Target Name="GetOutputPath" Outputs="$(OutDir)">
+  </Target>
+
+  <!--
+    ======================================================================================
+                           GetModelFiles
+    Returns the model files from the project.
+    ======================================================================================
+    -->
+  <Target Name="GetModelFiles"
+          Outputs="@(LightSwitchModel)">
+  </Target>
+
+  <Target Name="GetGeneratedMetadataFiles"
+          Outputs="@(GeneratedMetadataFiles)" />
+
+  <Import Project="Publish\$(LightSwitchPublishVersion)\Microsoft.LightSwitch.Build.Publish.targets" Condition="Exists('Publish\$(LightSwitchPublishVersion)\Microsoft.LightSwitch.Build.Publish.targets')" />
+
+</Project>

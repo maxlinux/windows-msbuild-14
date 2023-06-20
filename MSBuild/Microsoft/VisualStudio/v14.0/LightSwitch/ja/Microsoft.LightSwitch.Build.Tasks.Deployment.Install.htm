@@ -1,0 +1,62 @@
+﻿<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    
+</head>
+<h1>
+    Microsoft Visual Studio LightSwitch アプリケーションのインストール手順
+</h1>
+<p >
+    &nbsp;<font size="2">
+        次の手順は、2 層のデスクトップ クライアント アプリケーションの
+         インストールに必要です
+    </font>
+</p>
+<p  >
+    1.&nbsp;&nbsp;&nbsp; SQL Server Express がまだインストールされていない場合は、対象の (クライアント) コンピューター
+    にインストールします。LightSwitch アプリケーションには、SQL Server 2005 以上のバージョン、
+    または SQL Server Express 2005 以上のバージョンが必要です。
+    <a href="http://go.microsoft.com/fwlink/?LinkId=206709">SQL Server Express のインストール オプションについて詳細を確認してください。</a>
+</p>
+<p  >
+    2.&nbsp;&nbsp;&nbsp; 対象のコンピューターで、sqlcmd.exe コマンド ツールを使用してデータベースのスキーマを
+    配置します。sqlcmd.exe ツールは、一般に Program Files または Program File (x86) 
+    ディレクトリの下の \Microsoft SQL Server\110\Tools\Binn ディレクトリに
+    SQL Server と一緒にインストールされます。
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; 管理者特権でのコマンド プロンプトで、発行の出力を含む
+    ディレクトリに変更し、次のようなコマンドを入力します。
+</p>
+<p  >
+    &nbsp;<span >sqlcmd.exe -i MyApplication.sql -S .\SQLExpress</span>
+</p>
+<p  >
+    &nbsp;<em>MyApplication</em> はアプリケーションの名前に置き換え、
+    <em>.\SQLExpress</em> はサーバー上のデータベースの場所に置き換えます。
+</p><p  >
+    3.&nbsp;&nbsp;&nbsp; 発行の出力の Application Files サブディレクトリで
+    web.config ファイルを探します。
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; web.config をメモ帳で開き、サーバーおよびデータベース名
+    を使用するために、&lt;connectionStrings&gt;  <connectionstrings>
+        セクションの接続を編集します。たとえば
+    次のような入力内容になります。
+</p>
+<p  >
+    &lt;add name=&quot;_IntrinsicData&quot; connectionString=&quot;Data
+    Source=SERVERNAME\SQLEXPRESS;Initial Catalog=MyApplication;Integrated
+    Security=True;Pooling=True;Connect Timeout=30;User Instance=False&quot; /&gt;
+</p>
+<p  >
+    <em>SERVERNAME</em> をデータベース サーバーの名前に置き換え、<em>
+        <em>MyApplication</em>
+    </em>をアプリケーション名に置き換えます。
+</p>
+<p  >
+    4<em>
+        .&nbsp;&nbsp;&nbsp;
+    </em>
+    対象のコンピューターで Setup.exe を
+    実行して、アプリケーションをインストールします。
+</p>

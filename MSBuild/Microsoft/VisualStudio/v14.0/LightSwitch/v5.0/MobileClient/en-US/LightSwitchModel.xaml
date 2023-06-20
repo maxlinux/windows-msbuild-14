@@ -1,0 +1,43 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--Copyright, Microsoft Corporation, All rights reserved.-->
+<Rule
+  Name="LightSwitchModel"
+  DisplayName="File Properties"
+  PageTemplate="generic"
+  Description="File Properties"
+  xmlns="http://schemas.microsoft.com/build/2009/properties">
+
+  <Rule.Categories>
+    <Category Name="General" DisplayName="General"/>
+  </Rule.Categories>
+
+  <Rule.DataSource>
+    <DataSource Persistence="ProjectFile" HasConfigurationCondition="false" ItemType="LightSwitchModel" />
+  </Rule.DataSource>
+
+  <StringProperty
+    Name="Identity"
+    DisplayName="File Name"
+    ReadOnly="true"
+    Category="General"
+    F1Keyword="javascript.project.property.filename"
+    Description="Name of the file or folder.">
+    <StringProperty.DataSource>
+      <DataSource Persistence="Intrinsic" ItemType="LightSwitchModel" PersistedName="Identity" />
+    </StringProperty.DataSource>
+  </StringProperty>
+
+  <StringProperty
+    Name="FullPath"
+    DisplayName="Full Path"
+    ReadOnly="true"
+    Category="General"
+    F1Keyword="javascript.project.property.fullpath"
+    Description="Location of the file.">
+    <StringProperty.DataSource>
+      <DataSource Persistence="Intrinsic" ItemType="LightSwitchModel" PersistedName="FullPath" />
+    </StringProperty.DataSource>
+  </StringProperty>
+
+  <BoolProperty Name="Visible" Visible="false" />
+</Rule>

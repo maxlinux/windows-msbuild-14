@@ -1,0 +1,63 @@
+﻿<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    
+</head>
+<h1>
+    Istruzioni per l'installazione dell'applicazione Microsoft Visual Studio LightSwitch
+</h1>
+<p >
+    &nbsp;<font size="2">
+        I seguenti passaggi sono necessari per installare un'applicazione client
+        desktop a 2 livelli:
+    </font>
+</p>
+<p  >
+    1.&nbsp;&nbsp;&nbsp; Installare SQL Server Express nel computer di destinazione (client), se non è
+    già installato. Le applicazioni LightSwitch richiedono SQL Server 2005 o versione
+    successiva oppure SQL Server Express 2005 o versione successiva. 
+    <a href="http://go.microsoft.com/fwlink/?LinkId=206709">Altre informazioni sulle opzioni di installazione di SQL Server Express.</a>
+</p>
+<p  >
+    2.&nbsp;&nbsp;&nbsp; Nel computer di destinazione distribuire lo schema del database usando
+ lo strumento di comando sqlcmd.exe. Lo strumento sqlcmd.exe viene installato con SQL Server,
+ generalmente nella directory \Microsoft SQL Server\110\Tools\Binn della directory
+ Programmi o Programmi (x86).
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; Da un prompt dei comandi con privilegi elevati, passare alla
+    directory contenente l'output di pubblicazione e immettere un comando simile al
+    seguente:
+</p>
+<p  >
+    &nbsp;<span >sqlcmd.exe -i MyApplication.sql -S .\SQLExpress</span>
+</p>
+<p  >
+    &nbsp;Sostituire <em>MyApplication</em> con il nome dell'applicazione e sostituire
+    <em>.\SQLExpress</em> con il percorso del database nel server.
+</p><p  >
+    3.&nbsp;&nbsp;&nbsp; Individuare il file web.config nella sottodirectory Application Files
+    dell'output di pubblicazione.
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; Aprire web.config nel Blocco note e modificare la connessione nella
+    sezione &lt;connectionStrings&gt; <connectionstrings>
+        per usare il nome del server e del database desiderati. Ad
+        esempio, per una voce simile a:
+</p>
+<p  >
+    &lt;add name=&quot;_IntrinsicData&quot; connectionString=&quot;Data
+    Source=SERVERNAME\SQLEXPRESS;Initial Catalog=MyApplication;Integrated
+    Security=True;Pooling=True;Connect Timeout=30;User Instance=False&quot; /&gt;
+</p>
+<p  >
+    Sostituire <em>SERVERNAME</em> con il nome del server di database e sostituire<em>
+        <em>MyApplication</em>
+    </em>con il nome dell'applicazione.
+</p>
+<p  >
+    4<em>
+        .&nbsp;&nbsp;&nbsp;
+    </em>
+    Eseguire Setup.exe nel computer di destinazione per
+    installare l'applicazione.
+</p>

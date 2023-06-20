@@ -1,0 +1,63 @@
+﻿<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    
+</head>
+<h1>
+    Pokyny pro instalaci prostředí Microsoft Visual Studio LightSwitch
+</h1>
+<p >
+    &nbsp;<font size="2">
+        K nainstalování dvouvrstvé desktopové klientské aplikace je potřeba udělat
+        tyto kroky:
+    </font>
+</p>
+<p  >
+    1.&nbsp;&nbsp;&nbsp; Nainstalujte na cílovém (klientském) počítači SQL Server Express, pokud
+    ještě není nainstalovaný. Aplikace LightSwitch vyžadují SQL Server 2005 nebo novější
+    verzi, nebo SQL Server Express 2005 nebo novější verzi.
+    <a href="http://go.microsoft.com/fwlink/?LinkId=206709">Přečtěte si další informace o možnostech instalace SQL Serveru Express.</a>
+</p>
+<p  >
+    2.&nbsp;&nbsp;&nbsp; Pomocí nástroje příkazového řádku sqlcmd.exe nasaďte na cílovém počítači
+    schéma databáze. Nástroj sqlcmd.exe se instaluje s SQL Serverem,
+    obvykle do adresáře \Microsoft SQL Server\110\Tools\Binn pod adresářem
+    Program Files nebo Program Files (x86).
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; Na příkazovém řádku se zvýšenými oprávněními změňte
+    adresář na ten, který obsahuje výstup publikování, a zadejte příkaz podobný
+    tomuto:
+</p>
+<p  >
+    &nbsp;<span >sqlcmd.exe -i MyApplication.sql -S .\SQLExpress</span>
+</p>
+<p  >
+    &nbsp;Nahraďte <em>MojeAplikace</em> názvem vaší aplikace, poté nahraďte
+    <em>.\SQLExpress</em> umístěním databáze na serveru.
+</p><p  >
+    3.&nbsp;&nbsp;&nbsp; V podadresáři Soubory aplikace výstupu publikování
+    najděte soubor web.config.
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; Otevřete web.config v Poznámkovém bloku a upravte připojení v
+    oddílu &lt;connectionStrings&gt; tak, <connectionstrings>
+        aby obsahovalo název vašeho serveru a databáze.
+        Třeba u položky tohoto typu:
+</p>
+<p  >
+    &lt;add name=&quot;_IntrinsicData&quot; connectionString=&quot;Data
+    Source=SERVERNAME\SQLEXPRESS;Initial Catalog=MyApplication;Integrated
+    Security=True;Pooling=True;Connect Timeout=30;User Instance=False&quot; /&gt;
+</p>
+<p  >
+    nahraďte <em>SERVERNAME </em>názvem databázového serveru a<em>
+        <em>MyApplication</em>
+    </em>názvem vaší aplikace.
+</p>
+<p  >
+    4.<em>
+        &nbsp;&nbsp;&nbsp;
+    </em>
+    Spusťte soubor Setup.exe na cílovém počítači
+    a nainstalujte aplikaci.
+</p>

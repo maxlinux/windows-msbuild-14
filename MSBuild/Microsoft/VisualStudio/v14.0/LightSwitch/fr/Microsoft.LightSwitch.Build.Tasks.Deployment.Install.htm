@@ -1,0 +1,63 @@
+﻿<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    
+</head>
+<h1>
+    Instructions d'installation de l'application Microsoft Visual Studio LightSwitch
+</h1>
+<p >
+    &nbsp;<font size="2">
+        Les étapes suivantes sont nécessaires pour installer une application de bureau
+        cliente à 2 niveaux :
+    </font>
+</p>
+<p  >
+    1.&nbsp;&nbsp;&nbsp; Installez SQL Server Express sur l'ordinateur cible (client), s'il n'est pas
+    déjà installé. Les applications LightSwitch nécessitent soit SQL Server 2005 ou version
+    ultérieure, soit SQL Server Express 2005 ou version ultérieure.
+    <a href="http://go.microsoft.com/fwlink/?LinkId=206709">En savoir plus sur les options d'installation de SQL Server Express.</a>
+</p>
+<p  >
+    2.&nbsp;&nbsp;&nbsp; Sur l'ordinateur cible, déployez le schéma de la base de données à l'aide de
+    l'outil en ligne de commande sqlcmd.exe. L'outil Sqlcmd.exe est installé avec SQL Server,
+    généralement dans le répertoire \Microsoft SQL Server\110\Tools\Binn du répertoire
+    Program Files ou Program File (x86).
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; À partir d'une invite de commandes avec élévation de privilèges, accédez au
+    répertoire contenant la sortie de publication, et entrez une commande similaire
+    à ce qui suit :
+</p>
+<p  >
+    &nbsp;<span >sqlcmd.exe -i MyApplication.sql -S .\SQLExpress</span>
+</p>
+<p  >
+    &nbsp;Remplacez <em>MyApplication</em> par le nom de votre application et remplacez
+    <em>.\SQLExpress</em> par l'emplacement de la base de données sur le serveur.
+</p><p  >
+    3.&nbsp;&nbsp;&nbsp; Localisez le fichier web.config dans le sous-répertoire Fichiers d'application
+    de la sortie de publication.
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; Ouvrez le fichier web.config dans le Bloc-notes et modifiez la connexion dans
+    la section &lt;connectionStrings&gt; <connectionstrings>
+        de manière à utiliser le nom de votre serveur et de votre base de données. Par
+        exemple, pour une entrée similaire à :
+</p>
+<p  >
+    &lt;add name=&quot;_IntrinsicData&quot; connectionString=&quot;Data
+    Source=SERVERNAME\SQLEXPRESS;Initial Catalog=MyApplication;Integrated
+    Security=True;Pooling=True;Connect Timeout=30;User Instance=False&quot; /&gt;
+</p>
+<p  >
+    Remplacez <em>SERVERNAME</em> par le nom du serveur de base de données, et
+        <em>MyApplication</em>
+    </em>par le nom de votre application.
+</p>
+<p  >
+    4<em>
+        .&nbsp;&nbsp;&nbsp;
+    </em>
+    Exécutez Setup.exe sur l'ordinateur cible pour
+    installer l'application.
+</p>

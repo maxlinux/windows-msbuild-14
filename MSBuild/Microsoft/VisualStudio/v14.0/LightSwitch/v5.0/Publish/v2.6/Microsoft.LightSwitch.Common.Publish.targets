@@ -1,0 +1,94 @@
+<!--
+***********************************************************************************************
+Microsoft.LightSwitch.Common.targets
+
+WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and have
+          created a backup copy.  Incorrect changes to this file will make it
+          impossible to load or build your projects from the command-line or the IDE.
+
+This file defines the steps in the standard build process specific shared for all SMB projects types.
+
+Copyright (C) Microsoft Corporation. All rights reserved.
+***********************************************************************************************
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <LightSwitchPublishTasksPath Condition=" '$(LightSwitchPublishTasksPath)' == '' ">$(LightSwitchTasksDir)Microsoft.LightSwitch.Publish.Tasks.dll</LightSwitchPublishTasksPath>
+    </PropertyGroup>
+
+    <UsingTask TaskName="CheckWebDeploymentProviderStatus" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="GetIisAppSite" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+
+    <!-- Determines the web deployment providers to use, based upon availability of providers on the server. 
+         Sets the "WebDeploymentProvidersToUse" property to distinguish between the provider sets.
+         Possible values are:
+            MSDeploy: AppPoolNetFx, AppPoolPipeline, and AppHostAuthOverride as appropriate
+            LightSwitch: Use LightSwitchApplication
+            None: Use no additional providers
+    -->
+    <Target Name="GetWebDeploymentProvidersToUse"
+            Condition=" '$(WebDeploymentProvidersToUse)' == '' and '$(WebPublishMethod)' == 'MSDeploy' ">
+
+        <!-- Takes "Default Web Site/MyApplication" and returns "Default Web Site" 
+             since the status query will return false if the application does not yet exist -->
+        <GetIisAppSite IisAppPath="$(DeployIisAppPath)">
+            <Output TaskParameter="IisAppSite" PropertyName="_DeployIisAppSite" />
+        </GetIisAppSite>
+
+        <ItemGroup>
+            <_MSDeployProvider Remove="@(_MSDeployProvider)" />
+
+            <_MSDeployProvider Include="AppPoolNetFx">
+                <Path>$(_DeployIisAppSite)</Path>
+            </_MSDeployProvider>
+            <_MSDeployProvider Include="AppPoolPipeline">
+                <Path>$(_DeployIisAppSite)</Path>
+            </_MSDeployProvider>
+        </ItemGroup>
+
+        <ItemGroup>
+            <_AppHostAuthOverrideProvider Remove="@(_AppHostAuthOverrideProvider)" />
+
+            <_AppHostAuthOverrideProvider Include="AppHostAuthOverride" Condition=" '$(AuthenticationType)' != 'None' ">
+                <Path>$(_DeployIisAppSite)</Path>
+            </_AppHostAuthOverrideProvider>
+        </ItemGroup>
+        
+        <ItemGroup>
+            <_LightSwitchProvider Remove="@(_LightSwitchProvider)" />
+
+            <_LightSwitchProvider Include="LightSwitchApplication">
+                <Path>$(_DeployIisAppSite)</Path>
+            </_LightSwitchProvider>
+        </ItemGroup>
+
+        <CheckWebDeploymentProviderStatus Providers="@(_MSDeployProvider)"
+                                          Destination="@(MsDeployDestinationProviderSetting)"
+                                          Condition=" '@(_MSDeployProvider)' != '' ">
+            <Output TaskParameter="Available" PropertyName="_MSDeployProvidersAvailable" />
+        </CheckWebDeploymentProviderStatus>
+
+        <CheckWebDeploymentProviderStatus Providers="@(_AppHostAuthOverrideProvider)"
+                                          Destination="@(MsDeployDestinationProviderSetting)"
+                                          Condition=" '@(_AppHostAuthOverrideProvider)' != '' and '$(_MSDeployProvidersAvailable)' == 'true' ">
+            <Output TaskParameter="Available" PropertyName="UseAppHostAuthOverride" />
+        </CheckWebDeploymentProviderStatus>
+
+        <CheckWebDeploymentProviderStatus Providers="@(_LightSwitchProvider)"
+                                          Destination="@(MsDeployDestinationProviderSetting)"
+                                          Condition=" '@(_LightSwitchProvider)' != '' ">
+            <Output TaskParameter="Available" PropertyName="_LightSwitchProvidersAvailable" />
+        </CheckWebDeploymentProviderStatus>
+
+        <PropertyGroup Condition=" '$(WebDeploymentProvidersToUse)' == '' and '$(_MSDeployProvidersAvailable)' == 'true' ">
+            <WebDeploymentProvidersToUse>MSDeploy</WebDeploymentProvidersToUse>
+        </PropertyGroup>
+        <PropertyGroup Condition=" '$(WebDeploymentProvidersToUse)' == '' and '$(_LightSwitchProvidersAvailable)' == 'true' ">
+            <WebDeploymentProvidersToUse>LightSwitch</WebDeploymentProvidersToUse>
+        </PropertyGroup>
+        <PropertyGroup Condition=" '$(WebDeploymentProvidersToUse)' == '' ">
+            <WebDeploymentProvidersToUse>None</WebDeploymentProvidersToUse>
+        </PropertyGroup>
+    </Target>
+
+</Project>

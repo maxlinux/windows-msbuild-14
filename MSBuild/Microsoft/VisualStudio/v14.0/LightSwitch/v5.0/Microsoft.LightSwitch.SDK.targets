@@ -1,0 +1,41 @@
+<!--
+***********************************************************************************************
+Microsoft.LightSwitch.Sdk.targets
+
+Copyright (C) Microsoft Corporation. All rights reserved.
+***********************************************************************************************
+-->
+<Project ToolsVersion="3.5" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- These tasks are specific to the build process defined in this file, and are not considered general-purpose build tasks. -->
+  <UsingTask TaskName="LsPkgPackageTask" AssemblyFile="Microsoft.LightSwitch.SDk.BuildTasks.dll"/>
+
+  <!-- Build LsPkg -->
+  <PropertyGroup>
+      <BuildDependsOn>$(BuildDependsOn);CreateLsPkgPackage</BuildDependsOn>
+  </PropertyGroup>
+
+  <Target Name="CreateLsPkgPackage" Condition="'$(CreateLsPkg)'=='true'">
+      <LsPkgPackageTask PackageOutputFileName="$(PackageOutputFileName)"
+
+                        ClientReferences                  ="@(ClientReference)"
+                        ClientDebugOnlyReferences         ="@(ClientDebugOnlyReference)"
+                        ClientGeneratedReferences         ="@(ClientGeneratedReference)"
+                        ClientGeneratedDebugOnlyReferences="@(ClientGeneratedDebugOnlyReference)"
+                        CommonReferences                  ="@(CommonReference)"
+                        ServerReferences                  ="@(ServerReference)"
+                        ServerDebugOnlyReferences         ="@(ServerDebugOnlyReference)"
+                        ServerGeneratedReferences         ="@(ServerGeneratedReference)"
+                        ServerGeneratedDebugOnlyReferences="@(ServerGeneratedDebugOnlyReference)"
+                        IDEReferences                     ="@(IDEReference)"
+
+                        ClientReferenceResources         ="@(ClientReferenceResource)"
+                        ClientGeneratedReferenceResources="@(ClientGeneratedReferenceResource)"
+                        CommonReferenceResources         ="@(CommonReferenceResource)"
+                        ServerReferenceResources         ="@(ServerReferenceResource)"
+                        ServerGeneratedReferenceResources="@(ServerGeneratedReferenceResource)"
+                        IDEReferenceResources            ="@(IDEReferenceResource)">
+       </LsPkgPackageTask>
+  </Target>
+
+</Project>

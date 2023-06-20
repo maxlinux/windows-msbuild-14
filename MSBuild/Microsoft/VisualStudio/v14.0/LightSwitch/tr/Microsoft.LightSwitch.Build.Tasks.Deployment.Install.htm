@@ -1,0 +1,63 @@
+﻿<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    
+</head>
+<h1>
+    Microsoft Visual Studio LightSwitch Uygulaması Yükleme Yönergeleri
+</h1>
+<p >
+    &nbsp;<font size="2">
+        Aşağıdaki adımlar 2 katmanlı masaüstü istemci uygulamasını
+        yüklemek için gereklidir:
+    </font>
+</p>
+<p  >
+    1.&nbsp;&nbsp;&nbsp; SQL Server Express'i hedef (istemci) bilgisayarına yükleyin, zaten yüklüyse yüklemeniz
+    gerekmez. LightSwitch Uygulamaları, SQL Server 2005 veya daha sonraki bir
+    sürümü veya SQL Server Express 2005 ya da daha sonraki bir sürümü gerektirir.
+    <a href="http://go.microsoft.com/fwlink/?LinkId=206709">SQL Server Express yükleme seçenekleri hakkında daha fazla bilgi edinin.</a>
+</p>
+<p  >
+    2.&nbsp;&nbsp;&nbsp; Hedef bilgisayarda sqlcmd.exe komut aracını kullanarak veritabanı
+    şemasını dağıtın. Sqlcmd.exe aracı SQL Server ile
+    genellikle Program Files veya Program File (x86) dizininin altında \Microsoft SQL Server\110\Tools\Binn dizinine
+    yüklenir.
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; Yükseltilmiş bir Komut İstemi'nden, yayımlama çıktısını içeren
+    dizine geçin ve şuna benzer bir
+    komut girin:
+</p>
+<p  >
+    &nbsp;<span >sqlcmd.exe -i Uygulamam.sql -S .\SQLExpress</span>
+</p>
+<p  >
+    &nbsp;<em>BenimUygulamam</em> yerine uygulamanızın adını yazın ve
+    <em>.\SQLExpress</em> yerine sunucudaki veritabanı konumunu yazın.
+</p><p  >
+    3.&nbsp;&nbsp;&nbsp; Yayım çıktısının Application Files alt dizininde web.config
+    dosyasını bulun.
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; web.config dosyasını Not Defteri'nde açın ve sunucu ve veritabanı adını kullanmak için
+    &lt;connectionStrings&gt; <connectionstrings>
+        dizesindeki bağlantıyı düzenleyin. Örneğin
+        şuna benzer bir girdi:
+</p>
+<p  >
+    &lt;add name=&quot;_IntrinsicData&quot; connectionString=&quot;Data
+    Source=SUNUCUADI\SQLEXPRESS;Initial Catalog=Uygulamam;Integrated
+    Security=True;Pooling=True;Connect Timeout=30;User Instance=False&quot; /&gt;
+</p>
+<p  >
+    <em>SUNUCUADI </em>'nı veritabanı sunucusunun adıyla ve <em>
+        <em>Uygulamam</em>'ı ise
+    </em>uygulamanızın adıyla değiştirin.
+</p>
+<p  >
+    4<em>
+        .&nbsp;&nbsp;&nbsp;
+    </em>
+    Uygulamayı yüklemek için hedef bilgisayarda
+    Setup.exe'yi çalıştırın.
+</p>

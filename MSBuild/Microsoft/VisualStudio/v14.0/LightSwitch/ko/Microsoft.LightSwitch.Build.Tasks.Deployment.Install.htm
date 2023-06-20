@@ -1,0 +1,63 @@
+﻿<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    
+</head>
+<h1>
+    Microsoft Visual Studio LightSwitch 응용 프로그램 설치 지침
+</h1>
+<p >
+    &nbsp;<font size="2">
+        다음 단계는 2계층 데스크톱 클라이언트 응용 프로그램을
+        설치하는 데 필요합니다.
+    </font>
+</p>
+<p  >
+    1.&nbsp;&nbsp;&nbsp; 이미 설치되지 않은 경우 대상(클라이언트) 컴퓨터에 SQL Server Express를
+    설치합니다. LightSwitch 응용 프로그램에는 SQL Server 2005 이상
+    버전 또는 SQL Server Express 2005 이상 버전이 필요합니다.
+    <a href="http://go.microsoft.com/fwlink/?LinkId=206709">SQL Server Express 설치 옵션에 대한 자세한 정보.</a>
+</p>
+<p  >
+    2.&nbsp;&nbsp;&nbsp; 대상 컴퓨터에서 sqlcmd.exe 명령 도구를 사용하여 데이터베이스
+    스키마를 배포합니다. Sqlcmd.exe 도구는 일반적으로, 프로그램 파일 또는 프로그램 파일(x86)
+    디렉터리 아래 \Microsoft SQL Server\110\Tools\Binn 디렉터리에
+    SQL Server와 함께 설치됩니다.
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp;  권한이 높은 명령 프롬프트에서
+    게시 출력을 포함하는 디렉터리로 변경하고 다음과 유사한 명령을
+    입력합니다.
+</p>
+<p  >
+    &nbsp;<span >sqlcmd.exe -i MyApplication.sql -S .\SQLExpress</span>
+</p>
+<p  >
+    &nbsp;<em>MyApplication</em>을 해당 응용 프로그램 이름으로 바꾸고 
+    <em>.\SQLExpress</em>를 서버의 데이터베이스 위치로 바꿉니다.
+</p><p  >
+    3.&nbsp;&nbsp;&nbsp; 게시 출력의 응용 프로그램 파일 하위 디렉터리에서
+    web.config 파일을 찾습니다.
+</p>
+<p  >
+    a.&nbsp;&nbsp;&nbsp;&nbsp; 메모장에서 web.config를 열고 서버 및 데이터베이스 이름을 사용하도록
+     &lt;connectionStrings&gt; <connectionstrings>
+        섹션의 연결을 편집합니다. 
+        예를 들어, 다음과 유사한 항목의 경우:
+</p>
+<p  >
+    &lt;add name=&quot;_IntrinsicData&quot; connectionString=&quot;Data
+    Source=SERVERNAME\SQLEXPRESS;Initial Catalog=MyApplication;Integrated
+    Security=True;Pooling=True;Connect Timeout=30;User Instance=False&quot; /&gt;
+</p>
+<p  >
+    <em>SERVERNAME</em>을 데이터베이스 서버의 이름으로 바꾸고<em>
+        <em>MyApplication</em>을
+    </em>응용 프로그램의 이름으로 바꿉니다.
+</p>
+<p  >
+    4<em>
+        .&nbsp;&nbsp;&nbsp;
+    </em>
+    대상 컴퓨터에서 Setup.exe을 실행하여
+    응용 프로그램을 설치합니다.
+</p>

@@ -1,0 +1,1714 @@
+<!--
+***********************************************************************************************
+Microsoft.LightSwitch.Publish.targets
+
+WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and have
+          created a backup copy.  Incorrect changes to this file will make it
+          impossible to load or build your projects from the command-line or the IDE.
+
+This file defines the steps in the standard build process the root SMB project.
+
+Copyright (C) Microsoft Corporation. All rights reserved.
+***********************************************************************************************
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <Import Project="Microsoft.LightSwitch.Common.Publish.targets" />
+
+    <PropertyGroup>
+        <ExcludeGeneratedDebugSymbolInPublish Condition="'$(ExcludeGeneratedDebugSymbol)'==''">true</ExcludeGeneratedDebugSymbolInPublish>
+        <WebPublishingTasksPath Condition=" '$(WebPublishingTasksPath)' == '' ">$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v14.0\Web</WebPublishingTasksPath>
+
+        <ActiveAzureSdkVersion Condition=" '$(ActiveAzureSdkVersion)' == '' ">2.6</ActiveAzureSdkVersion>
+        <ServiceHostingSDKRegistryKey>HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Microsoft SDKs\ServiceHosting\v$(ActiveAzureSdkVersion)</ServiceHostingSDKRegistryKey>
+        <ServiceHostingSDKInstallDir Condition=" '$(ServiceHostingSDKInstallDir)' == '' ">$([MSBuild]::GetRegistryValueFromView('$(ServiceHostingSDKRegistryKey)', 'InstallPath', null, RegistryView.Registry32))</ServiceHostingSDKInstallDir>
+
+        <!-- Ensure ServiceHostingSDKInstallDir has a trailing slash, so it can be concatenated -->
+        <ServiceHostingSDKInstallDir Condition=" '$(ServiceHostingSDKInstallDir)' != '' and !HasTrailingSlash('$(ServiceHostingSDKInstallDir)')">$(ServiceHostingSDKInstallDir)\</ServiceHostingSDKInstallDir>
+        <ServiceHostingSDKBinDir     Condition=" '$(ServiceHostingSDKBinDir)' == '' ">$(ServiceHostingSDKInstallDir)bin\</ServiceHostingSDKBinDir>
+        <ServiceHostingSDKTaskPath   Condition=" '$(ServiceHostingSDKTaskPath)' == '' ">$(ServiceHostingSDKBinDir)Microsoft.ServiceHosting.Tools.MSBuildTasks.dll</ServiceHostingSDKTaskPath>
+
+        <!--If the path to the sign tool is not set, try the Windows SDK path or the Framework SDK path -->
+        <_WindowsSDKPath>$([MSBuild]::GetRegistryValueFromView('HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Kits\Installed Roots', 'KitsRoot81', null, RegistryView.Registry32, RegistryView.Default))</_WindowsSDKPath>
+        <_WindowsSDKSignToolPath Condition="'$(SignToolPath)' == ''">$([System.IO.Path]::Combine('$(_WindowsSDKPath)', 'bin\x86'))</_WindowsSDKSignToolPath>
+
+        <SignToolPath Condition="'$(SignToolPath)' == '' and Exists('$(_WindowsSDKSignToolPath)\SignTool.exe')">$(_WindowsSDKSignToolPath)</SignToolPath>
+        <SignToolPath Condition="'$(SignToolPath)' == ''">$(FrameworkSDKRoot)bin</SignToolPath>
+        <SharePointProviderHostedPublishProfileName Condition=" '$(SharePointProviderHostedPublishProfileName)' == '' ">LightSwitch.SharePoint.ProviderHosted</SharePointProviderHostedPublishProfileName>
+        <PublishedFrom Condition=" '$(PublishedFrom)' == '' ">2419CB28-FD8D-4120-A595-38D7FBABF263</PublishedFrom>
+    </PropertyGroup>
+
+    <UsingTask TaskName="EscapeTextForRegularExpressions" AssemblyFile="$(WebPublishingTasksPath)\Microsoft.Web.Publishing.Tasks.dll"/>
+    <UsingTask TaskName="ExportParametersFile" AssemblyFile="$(WebPublishingTasksPath)\Microsoft.Web.Publishing.Tasks.dll"/>
+    <UsingTask TaskName="NormalizeServiceUrl" AssemblyFile="$(WebPublishingTasksPath)\Microsoft.Web.Publishing.Tasks.dll"/>
+    <UsingTask TaskName="TransformXml" AssemblyFile="$(WebPublishingTasksPath)\Microsoft.Web.Publishing.Tasks.dll" />
+    <UsingTask TaskName="CSPack" AssemblyFile="$(ServiceHostingSDKTaskPath)" Condition=" Exists('$(ServiceHostingSDKTaskPath)') " />
+    <UsingTask TaskName="AddConnectionStringsToAzureConfiguration" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="AppendTimestampToDeploymentLabel" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="ClearPublisherName" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="CreateSqlUser" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="CreateSqlUserScripts" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="CreateSqlUserWebScripts" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="DecryptPassword" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="DeploySchema" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="EnableAuthenticationValues" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="GenerateDBScript" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="GetApplicationCulture" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="GetClickOnceManifestComponents" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="GetEmbeddedResource" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="GetHasIntrinsicData" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="GetSharePointSettings" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="GetSqlInitialCatalog" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="GetSqlUserCredentials" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="GetWebDeployPublishMethod" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="LocalizeDescription" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="PublishAzurePackage" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="PublishSchemaToScript" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="PublishSchemaToDacPackage" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="ResolvePublishParameters" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="SetAppSetting" AssemblyFile="$(LightSwitchPublishTasksPath)" />
+    <UsingTask TaskName="SetServerToServerSettings" AssemblyFile="$(LightSwitchPublishTasksPath)" />
+    <UsingTask TaskName="SetAzureSdkSchemaVersion" AssemblyFile="$(LightSwitchPublishTasksPath)" />
+    <UsingTask TaskName="UpdateAzureSslCertificate" AssemblyFile="$(LightSwitchPublishTasksPath)" />
+    <UsingTask TaskName="SetConnectionString" AssemblyFile="$(LightSwitchPublishTasksPath)" />
+    <UsingTask TaskName="StartAzureService" AssemblyFile="$(LightSwitchPublishTasksPath)" />
+    <UsingTask TaskName="UpdateDefaultFile" AssemblyFile="$(LightSwitchTasksPath)"/>
+    <UsingTask TaskName="UpdateAzureOSVersion" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="UpdateSharePointAppManifest" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="ValidateTargetSqlPlatform" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="WebDeployAppHostAuthOverride" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="WritePublishProfile" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="WriteToConfigFile" AssemblyFile="$(LightSwitchTasksPath)"/>
+    <UsingTask TaskName="GetPasswordRegexTask" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="SignXapTask" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="UpdateAzureBindingRedirects" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+    <UsingTask TaskName="UpdateWebConfigForHtmlClients" AssemblyFile="$(LightSwitchPublishTasksPath)"/>
+
+    <!-- _BuildFile is defined in MSFT.LS.targets -->
+
+    <PropertyGroup>
+        <_PublishProfilePath>$(PublishProfilePath)</_PublishProfilePath>
+        <_PublishProfilePath Condition=" '$(PublishProfilePath)' != '' and '$([System.IO.Path]::IsPathRooted($(PublishProfilePath)))' == 'False' ">$(MSBuildProjectDirectory)\$(PublishProfilePath)</_PublishProfilePath>
+    </PropertyGroup>
+
+    <Import Project="$(_PublishProfilePath)"
+            Condition=" '$(_PublishProfilePath)' != '' "/>
+
+    <!-- Simplified conditions for Publish tasks -->
+    <PropertyGroup>
+        <_PublishAzure>false</_PublishAzure>
+        <_PublishAzure Condition=" '$(ApplicationServerType)' == 'Azure' and '$(AzureServiceType)' != 'WebSite' ">true</_PublishAzure>
+
+        <_PublishSharePoint>false</_PublishSharePoint>
+        <_PublishSharePoint Condition=" '$(AuthenticationType)' == 'SharePoint' ">true</_PublishSharePoint>
+
+        <_IsSharePointAutoHosted>false</_IsSharePointAutoHosted>
+        <_IsSharePointAutoHosted Condition=" $(_PublishSharePoint) and '$(ApplicationServerType)' == 'SharePointAutoHost' ">true</_IsSharePointAutoHosted>
+
+        <_IsSharePointProviderHosted>false</_IsSharePointProviderHosted>
+        <_IsSharePointProviderHosted Condition=" $(_PublishSharePoint) and !$(_IsSharePointAutoHosted) ">true</_IsSharePointProviderHosted>
+
+        <_IsSharePointServerToServer>false</_IsSharePointServerToServer>
+        <_IsSharePointServerToServer Condition=" $(_IsSharePointProviderHosted) and '$(SharePointAuthenticationType)' == 'ServerToServer' ">true</_IsSharePointServerToServer>
+
+        <_PackageWeb>false</_PackageWeb>
+        <_PackageWeb Condition=" ('$(ApplicationServerType)' == 'IIS' and '$(RemotePublish)' != 'true') or $(_IsSharePointAutoHosted) ">true</_PackageWeb>
+
+        <_PublishWeb>false</_PublishWeb>
+        <_PublishWeb Condition=" ('$(ApplicationServerType)' == 'IIS' or ('$(ApplicationServerType)' == 'Azure' and '$(AzureServiceType)' == 'WebSite')) and '$(RemotePublish)' == 'true' ">true</_PublishWeb>
+
+        <_PublishDisk>false</_PublishDisk>
+        <_PublishDisk Condition=" !$(_PublishAzure) and !$(_PackageWeb) and !$(_PublishWeb) ">true</_PublishDisk>
+
+        <_PackageSchemaType Condition=" $(_IsSharePointAutoHosted) ">DacPackage</_PackageSchemaType>
+
+        <_GenerateSchemaScript>false</_GenerateSchemaScript>
+        <_GenerateSchemaScript Condition=" (($(_PackageWeb) and '$(DeploySchema)' == 'true') or ($(_PublishDisk) and '$(DeploySchema)' != 'true')) and !$(_IsSharePointAutoHosted) ">true</_GenerateSchemaScript>
+
+        <_GenerateSchemaDacPackage>false</_GenerateSchemaDacPackage>
+        <_GenerateSchemaDacPackage Condition=" ($(_PublishAzure) or $(_PackageWeb)) and '$(DeploySchema)' != 'true' ">true</_GenerateSchemaDacPackage>
+
+        <_PackageSchemaType Condition=" $(_PackageWeb) and $(_GenerateSchemaScript) ">Script</_PackageSchemaType>
+
+        <_IsBrowserApplication>false</_IsBrowserApplication>
+        <_IsBrowserApplication Condition=" '$(ApplicationClientType)' == 'Browser' ">true</_IsBrowserApplication>
+
+        <_AddAdministratorToPackage>false</_AddAdministratorToPackage>
+        <_AddAdministratorToPackage Condition=" $(_PackageWeb) and '$(AddAdministrator)' == 'true' and '$(AuthenticationType)' != 'None' and !$(_PublishSharePoint) ">true</_AddAdministratorToPackage>
+
+        <_IsTargetSqlServerAzure>false</_IsTargetSqlServerAzure>
+        <_IsTargetSqlServerAzure Condition=" '$(TargetSqlServerVersion)' == 'Azure' ">true</_IsTargetSqlServerAzure>
+        <_TargetSqlServerVersion Condition=" !$(_IsTargetSqlServerAzure) ">$(TargetSqlServerVersion)</_TargetSqlServerVersion>
+        <_TargetSqlServerVersion Condition=" '$(_TargetSqlServerVersion)' == '' and  !$(_IsTargetSqlServerAzure)">10.0</_TargetSqlServerVersion>
+    </PropertyGroup>
+
+    <!-- Default values for Publish tasks -->
+    <PropertyGroup>
+        <PublishOutDir Condition="'$(PublishOutDir)' != '' and !HasTrailingSlash('$(PublishOutDir)')">$(PublishOutDir)\</PublishOutDir>
+        <PublishOutDir Condition="'$(PublishOutDir)'==''">$(OutDir)app.publish\</PublishOutDir>
+        <PublishLocation Condition=" '$(PublishLocation)' == ''">Publish\</PublishLocation>
+        <PublishLocation Condition=" '$(PublishLocation)' != '' and !HasTrailingSlash('$(PublishLocation)')">$(PublishLocation)\</PublishLocation>
+        <_TempPublishLocation>$(BaseIntermediateOutputPath)\Publish</_TempPublishLocation>
+
+        <PublishNewDatabase Condition=" '$(PublishNewDatabase)' == ''">true</PublishNewDatabase>
+        <OSVersion Condition=" '$(OSVersion)' == '' ">5.1.2600.0</OSVersion>
+        <MapFileExtensions Condition=" '$(MapFileExtensions)' == '' and ( '$(_PublishWeb)' == 'true' or '$(_PackageWeb)' == 'true') ">true</MapFileExtensions>
+        <PublishFileExtension Condition=" '$(PublishFileExtension)' == '' and '$(MapFileExtensions)' == 'true' and '$(_PublishDisk)' == 'true' ">.deploy</PublishFileExtension>
+        <Install Condition=" '$(Install)' == '' ">true</Install>
+        <MinimumRequiredVersion Condition=" '$(MinimumRequiredVersion)' == ''">$(AssemblyVersion)</MinimumRequiredVersion>
+        <UpdateEnabled Condition=" '$(UpdateEnabled)' == '' ">true</UpdateEnabled>
+        <UpdateMode Condition=" '$(UpdateMode)' == '' and '$(UpdateEnabled)' == 'true' ">Foreground</UpdateMode>
+        <BootstrapperEnabled Condition=" '$(BootstrapperEnabled)' == '' ">true</BootstrapperEnabled>
+        <BootstrapperComponentsLocation Condition=" '$(BootstrapperComponentsLocation)' == '' ">HomeSite</BootstrapperComponentsLocation>
+        <ConnectionStringName Condition=" '$(ConnectionStringName)' == '' ">_IntrinsicData</ConnectionStringName>
+        <ConnectionProvider Condition=" '$(ConnectionProvider)' == '' ">System.Data.SqlClient</ConnectionProvider>
+        <ConnectionStringPlaceHolder Condition=" '$(ConnectionStringPlaceHolder)' == '' ">$(ConnectionStringName) Placeholder</ConnectionStringPlaceHolder>
+        <DatabaseUserNamePlaceHolder Condition=" '$(DatabaseUserNamePlaceHolder)' == '' ">DatabaseUserName</DatabaseUserNamePlaceHolder>
+        <DatabaseUserPasswordPlaceHolder Condition=" '$(DatabaseUserPasswordPlaceHolder)' == '' ">DatabaseUserPassword</DatabaseUserPasswordPlaceHolder>
+        <DatabaseCreateUserPlaceHolder Condition=" '$(DatabaseCreateUserPlaceHolder)' == '' ">DatabaseCreateUserPlaceHolder</DatabaseCreateUserPlaceHolder>
+        <DefaultWebSite Condition=" '$(DefaultWebSite)' == '' ">Default Web Site</DefaultWebSite>
+        <SkipExtraFilesOnServer Condition=" '$(SkipExtraFilesOnServer)' == '' ">true</SkipExtraFilesOnServer>
+        <ServiceConfigurationRoleName Condition=" '$(ServiceConfigurationRoleName)' == '' ">LightSwitchWebRole</ServiceConfigurationRoleName>
+        <ServiceConfigurationCertificateName Condition=" '$(ServiceConfigurationCertificateName)' == '' ">SSLCertificate</ServiceConfigurationCertificateName>
+        <IncludeLightSwitchWebRole Condition=" '$(IncludeLightSwitchWebRole)' == '' ">true</IncludeLightSwitchWebRole>
+        <SslCertificateThumbprintAlgorithm Condition=" '$(SslCertificateThumbprintAlgorithm)' == '' ">sha1</SslCertificateThumbprintAlgorithm>
+        <ServiceDefinitionFile Condition=" '$(ServiceDefinitionFile)' == '' ">ServiceDefinition.csdef</ServiceDefinitionFile>
+        <ServiceConfigurationFile Condition=" '$(ServiceConfigurationFile)' == '' ">ServiceConfiguration.cscfg</ServiceConfigurationFile>
+        <DefaultDatabaseName Condition="'$(DefaultDatabaseName)' == ''">$(MSBuildProjectName)</DefaultDatabaseName>
+        <RetryAttemptsForDeployment Condition=" '$(RetryAttemptsForDeployment)' == '' ">3</RetryAttemptsForDeployment>
+        <AdministratorUserNamePlaceholder Condition=" '$(AdministratorUserNamePlaceholder)' == ''">AdministratorUserName</AdministratorUserNamePlaceholder>
+        <AdministratorFullNamePlaceholder Condition=" '$(AdministratorFullNamePlaceholder)' == ''">AdministratorFullName</AdministratorFullNamePlaceholder>
+        <AdministratorPasswordPlaceholder Condition=" '$(AdministratorPasswordPlaceholder)' == ''">AdministratorPassword</AdministratorPasswordPlaceholder>
+        <ServiceBindingMaxLength Condition=" '$(ServiceBindingMaxLength)' == ''">65536</ServiceBindingMaxLength>
+        <_IntrinsicDacPackageFilePath>$(MSBuildProjectDirectory)\Bin\Data\ApplicationSchema.dacpac</_IntrinsicDacPackageFilePath>
+        <SkipPublishAzurePackage Condition=" '$(SkipPublishAzurePackage)' == '' ">false</SkipPublishAzurePackage>
+        <SkipPublishAzurePackage Condition=" '$(AzureManagementThumbprint)' == '' ">true</SkipPublishAzurePackage>
+        <OutputDacPackageFileName Condition=" '$(OutputDacPackageFileName)' == '' ">$(MSBuildProjectName).dacpac</OutputDacPackageFileName>
+        <OutputAzurePackageFileName Condition=" '$(OutputAzurePackageFileName)' == '' ">$(MSBuildProjectName).cspkg</OutputAzurePackageFileName>
+        <UseLightSwitchWebDeploymentProvider Condition=" '$(UseLightSwitchWebDeploymentProvider)' == '' ">false</UseLightSwitchWebDeploymentProvider>
+        <IisAppPathFormat Condition=" '$(IisAppPathFormat)' == '' ">Default Web Site/{0}</IisAppPathFormat>
+        <RequireSecureConnection Condition=" '$(RequireSecureConnection)' == '' ">true</RequireSecureConnection>
+        <SkipUpdateAzureBindingRedirects Condition=" '$(SkipUpdateAzureBindingRedirects)' == '' ">false</SkipUpdateAzureBindingRedirects>
+    </PropertyGroup>
+
+    <!-- Additional private publish properties -->
+    <PropertyGroup Condition=" '$(_PublishDisk)' == 'true' ">
+        <_ApplicationFolderName>Application Files\</_ApplicationFolderName>
+        <_ApplicationDir>$(PublishOutDir)$(_ApplicationFolderName)</_ApplicationDir>
+    </PropertyGroup>
+
+    <!-- For Team Build, a relative PublishLocation will go to the output directory -->
+    <PropertyGroup>
+        <PublishLocation Condition=" '$(BuildUri)' != '' and '$(TeamFoundationServerUrl)' != '' and '$([System.IO.Path]::IsPathRooted($(PublishLocation)))' == 'False' ">$(OutDir)$(PublishLocation)</PublishLocation>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <_PublishOutDirItem Include="$(PublishOutDir)" />
+    </ItemGroup>
+
+    <Choose>
+        <When Condition=" $(_IsSharePointAutoHosted) ">
+            <ItemGroup>
+                <_PublishLocationItem Include="$(_TempPublishLocation)" />
+            </ItemGroup>
+        </When>
+        <When Condition=" $(_IsSharePointProviderHosted) ">
+            <ItemGroup>
+                <_PublishLocationItem Condition=" '$(PackageSubFolderName)' == '' " Include="$(PublishLocation)\$(AssemblyVersion)" />
+                <_PublishLocationItem Condition=" '$(PackageSubFolderName)' != '' " Include="$(PublishLocation)\$(PackageSubFolderName)" />
+            </ItemGroup>
+        </When>
+        <Otherwise>
+            <ItemGroup>
+                <_PublishLocationItem Condition=" $(_PackageWeb) " Include="$(PublishLocation)\$(PackageSubFolderName)" />
+                <_PublishLocationItem Condition=" !$(_PackageWeb) " Include="$(PublishLocation)" />
+            </ItemGroup>
+        </Otherwise>
+    </Choose>
+
+    <PropertyGroup>
+        <_OutputSqlScriptFileName>$(MSBuildProjectName).sql</_OutputSqlScriptFileName>
+        <_OutputCreateUserScriptFileName>CreateUser.sql</_OutputCreateUserScriptFileName>
+        <_OutputSourceManifestFileName>$(MSBuildProjectName).xml</_OutputSourceManifestFileName>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(_PublishDisk)' != 'true' ">
+        <_ScriptOutputPath>$(OutDir)</_ScriptOutputPath>
+    </PropertyGroup>
+    <PropertyGroup Condition=" '$(_PublishDisk)' == 'true' ">
+        <_ScriptOutputPath>$(PublishOutDir)</_ScriptOutputPath>
+    </PropertyGroup>
+    <ItemGroup>
+        <_SqlScriptFile Include="$(_ScriptOutputPath)$(_OutputSqlScriptFileName)" />
+        <_CreateUserScriptFile Condition=" $(_GenerateSchemaScript) "
+                               Include="$(_ScriptOutputPath)$(_OutputCreateUserScriptFileName)" />
+        <_CreateUserScriptFile Condition=" $(_GenerateSchemaDacPackage) "
+                               Include="$(PublishLocation)$(_OutputCreateUserScriptFileName)" />
+    </ItemGroup>
+
+    <ItemGroup Condition="Exists('$(ApplicationIcon)')">
+        <_ApplicationIcon Include="$(ApplicationIcon)">
+            <TargetPath>$(ApplicationIcon)</TargetPath>
+        </_ApplicationIcon>
+    </ItemGroup>
+
+    <PropertyGroup>
+        <_PublishProfileOutputDir>$(OutDir)__PublishProfiles</_PublishProfileOutputDir>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <PublishDependsOn>
+            BeforeLightSwitchPublishApplication;
+            PublishApplication;
+            AfterLightSwitchPublishApplication;
+        </PublishDependsOn>
+        <BeforeLightSwitchPublishApplicationDependsOn>
+            Build;
+            ValidatePublishProperties;
+            BeforePublish;
+            CleanPublishFolder;
+            AllProjectOutputGroups;
+            CopyFilesToPublishDirectory;
+            ProcessPublishProperties;
+            ProcessWebPublishProperties;
+            SignPublishedXapFile;
+            GetWebDeploymentProvidersToUse;
+            UpdateConfigFile;
+            UpdateConfigFileForHtmlClients;
+            GetApplicationCulture;
+            UpdateDefaultFile;
+            PublishSchema;
+        </BeforeLightSwitchPublishApplicationDependsOn>
+        <AfterLightSwitchPublishApplicationDependsOn>
+            DeploySchema;
+            StartPublishedApplication;
+            AfterPublish;
+        </AfterLightSwitchPublishApplicationDependsOn>
+    </PropertyGroup>
+
+    <Target Name="Publish" DependsOnTargets="$(PublishDependsOn)" />
+
+    <Target Name="BeforeLightSwitchPublishApplication" DependsOnTargets="$(BeforeLightSwitchPublishApplicationDependsOn)" />
+
+    <Target Name="AfterLightSwitchPublishApplication" DependsOnTargets="$(AfterLightSwitchPublishApplicationDependsOn)" />
+
+    <Target Name="CleanPublishFolder">
+        <RemoveDir Directories="$(PublishOutDir)"
+                   Condition=" '$(PublishOutDir)' == '$(OutDir)app.publish\' and Exists('$(PublishOutDir)')"/>
+
+        <RemoveDir Directories="$(_PublishProfileOutputDir)"
+                   Condition="Exists('$(_PublishProfileOutputDir)')"/>
+
+        <ItemGroup>
+            <_PublishCleanFile Include="$(OutDir)$(_OutputSqlScriptFileName);
+                                        $(OutDir)$(_OutputCreateUserScriptFileName);
+                                        $(OutDir)$(_OutputSourceManifestFileName);
+                                        $(OutDir)$(ServiceDefinitionFile);
+                                        $(OutDir)$(ServiceConfigurationFile);
+                                        $(OutDir)$(OutputAzurePackageFileName);" />
+        </ItemGroup>
+
+        <Delete Files="%(_PublishCleanFile.FullPath)" Condition="Exists('%(FullPath)')" />
+    </Target>
+
+    <Target Name="CopyFilesToPublishDirectory">
+        <PropertyGroup>
+            <_ApplicationDir Condition=" '$(_ApplicationDir)' == ''">$(PublishOutDir)</_ApplicationDir>
+        </PropertyGroup>
+
+        <Copy SourceFiles="@(BuildProjectOutputGroupOutput)"
+              DestinationFiles="@(BuildProjectOutputGroupOutput->'$(_ApplicationDir)%(TargetPath)$(PublishFileExtension)')"
+              Condition=" '%(CopyLocal)' == 'true' ">
+            <Output ItemName="_PublishFile" TaskParameter="CopiedFiles"/>
+        </Copy>
+        <Copy SourceFiles="@(_ApplicationIcon)"
+              DestinationFiles="@(_ApplicationIcon->'$(_ApplicationDir)%(TargetPath)$(PublishFileExtension)')"
+              Condition=" '@(_ApplicationIcon)' != '' ">
+            <Output ItemName="_PublishFile" TaskParameter="CopiedFiles"/>
+        </Copy>
+    </Target>
+
+    <!-- Sign the published Xap file. The file will be signed only if the Client project says so. Else, it is a no-op.-->
+    <Target Name="SignPublishedXapFile">
+        <!-- Get the full path to the Client project.-->
+        <PropertyGroup>
+            <_SilverlightClientProjectFullPath>%(_ClientXap.SilverlightSourceProject)</_SilverlightClientProjectFullPath>
+            <_SilverlightClientOutputXapName>%(_ClientXap.FileName)%(_ClientXap.Extension)</_SilverlightClientOutputXapName>
+            <_XapFileToSign Condition=" '%(FileName)%(Extension)' == '$(_SilverlightClientOutputXapName)' ">%(_PublishFile.FullPath)</_XapFileToSign>
+        </PropertyGroup>
+
+        <SignXapTask ProjectPath="$(_SilverlightClientProjectFullPath)"
+                     XapFileName="$(_XapFileToSign)"
+                     SignToolPath="$(SignToolPath)"
+                     TimestampUrl="$(ManifestTimestampUrl)"
+                     IsRFC3161TimestampUrl="$(IsRFC3161TimestampUrl)"
+                     Condition=" '$(_SilverlightClientProjectFullPath)' != '' and '$(_XapFileToSign)' != '' " />
+    </Target>
+
+    <Target Name="ResolveRequiresIntrinsicDataSource">
+        <GetHasIntrinsicData IsBuildingInsideVisualStudio="$(BuildingInsideVisualStudio)"
+                             Inputs="@(ServerMetadataFiles)"
+                             ProjectPath="$(MSBuildProjectFullPath)">
+            <Output TaskParameter="HasIntrinsicData" PropertyName="_HasIntrinsicData" />
+        </GetHasIntrinsicData>
+
+        <PropertyGroup>
+            <RequiresIntrinsicDataSource>false</RequiresIntrinsicDataSource>
+            <RequiresIntrinsicDataSource Condition=" '$(AuthenticationType)' == 'Forms' or '$(AuthenticationType)' == 'Windows' or '$(_HasIntrinsicData)' == 'true' ">true</RequiresIntrinsicDataSource>
+        </PropertyGroup>
+    </Target>
+
+    <PropertyGroup>
+        <ProcessPublishPropertiesDependsOn>
+            ResolveRequiresIntrinsicDataSource;
+        </ProcessPublishPropertiesDependsOn>
+    </PropertyGroup>
+
+    <Target Name="ProcessPublishProperties" DependsOnTargets="$(ProcessPublishPropertiesDependsOn)">
+        <DecryptPassword EncryptedPassword="$(EncryptedPublishConnectionString)" Condition=" '$(EncryptedPublishConnectionString)' != '' and '$(PublishConnectionString)' == '' ">
+            <Output TaskParameter="DecryptedPassword" PropertyName="PublishConnectionString" />
+        </DecryptPassword>
+
+        <DecryptPassword EncryptedPassword="$(EncryptedClientConnectionString)" Condition=" '$(EncryptedClientConnectionString)' != '' and '$(ClientConnectionString)' == '' ">
+            <Output TaskParameter="DecryptedPassword" PropertyName="ClientConnectionString" />
+        </DecryptPassword>
+
+        <DecryptPassword EncryptedPassword="$(EncryptedPublishSchemaConnectionString)" Condition=" '$(EncryptedPublishSchemaConnectionString)' != '' and '$(PublishSchemaConnectionString)' == '' ">
+            <Output TaskParameter="DecryptedPassword" PropertyName="PublishSchemaConnectionString" />
+        </DecryptPassword>
+
+        <DecryptPassword EncryptedPassword="$(EncryptedPublishUserPassword)" Condition=" '$(EncryptedPublishUserPassword)' != '' and '$(PublishUserPassword)' == '' ">
+            <Output TaskParameter="DecryptedPassword" PropertyName="PublishUserPassword" />
+        </DecryptPassword>
+
+        <DecryptPassword EncryptedPassword="$(EncryptedAdministratorPassword)" Condition=" '$(EncryptedAdministratorPassword)' != '' and '$(AdministratorPassword)' == '' ">
+            <Output TaskParameter="DecryptedPassword" PropertyName="AdministratorPassword" />
+        </DecryptPassword>
+
+        <ItemGroup>
+            <_ServerProjectItem Include="@(ProjectReference)" Condition=" '%(Type)' == 'Server' " />
+            <_DatabaseProjectItem Include="@(ProjectReference)" Condition=" '%(Type)' == 'Database' " />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <ExecuteSchemaDeploy>false</ExecuteSchemaDeploy>
+            <ExecuteSchemaDeploy Condition=" $(RequiresIntrinsicDataSource) and !($(_GenerateSchemaScript) or $(_GenerateSchemaDacPackage)) and !$(_PackageWeb) and '$(DeployDatabase)' == 'true' ">true</ExecuteSchemaDeploy>
+            <ExecuteSchemaPublish>false</ExecuteSchemaPublish>
+            <ExecuteSchemaPublish Condition=" $(RequiresIntrinsicDataSource) and ($(_GenerateSchemaScript) or $(_GenerateSchemaDacPackage)) and '$(DeployDatabase)' == 'true' ">true</ExecuteSchemaPublish>
+            <_ServerArtifactsFolder Condition=" $(ExecuteSchemaDeploy) or $(ExecuteSchemaPublish) or ($(RequiresIntrinsicDataSource) and $(_IsSharePointAutoHosted)) ">$(MSBuildProjectDirectory)\$([System.IO.Path]::GetDirectoryName(%(_ServerProjectItem.Identity)))\GeneratedArtifacts\</_ServerArtifactsFolder>
+        </PropertyGroup>
+        <GetSqlUserCredentials ConnectionString="$(ClientConnectionString)" Condition=" '' != '$(ClientConnectionString)' ">
+            <Output TaskParameter="UserName" PropertyName="SqlUserName" />
+            <Output TaskParameter="Password" PropertyName="SqlUserPassword" />
+            <Output TaskParameter="ParsedCredentials" PropertyName="CreateSqlUser" />
+        </GetSqlUserCredentials>
+
+        <ItemGroup>
+            <_ConfigFile Include="%(_PublishFile.Identity)$(PublishFileExtension)"
+                         Condition=" '%(_PublishFile.Filename)' == 'web' and '%(_PublishFile.Extension)' == '.config' and '%(_PublishFile.RelativeDir)' == '$(_ApplicationDir)' "/>
+            <PublishParameter Include="@(ExternalConnectionString)" />
+        </ItemGroup>
+
+        <ResolvePublishParameters IsBuildingInsideVisualStudio="$(BuildingInsideVisualStudio)"
+                                  Inputs="@(ServerMetadataFiles)"
+                                  SetParameters="@(PublishParameter)"
+                                  ProjectPath="$(MSBuildProjectFullPath)"
+                                  ExternalDataSources="@(ServerExternalDataSources)"
+                                  WebConfigFile="%(_ConfigFile.Identity)">
+            <Output TaskParameter="OutputPublishParameters" ItemName="_PublishParameters" />
+        </ResolvePublishParameters>
+
+        <PropertyGroup>
+            <_ServerProjectName>$([System.IO.Path]::GetFileNameWithoutExtension(%(_ServerProjectItem.Identity)))</_ServerProjectName>
+        </PropertyGroup>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="GetLightSwitchProjectSubType"
+                 Condition=" '%(Type)' == 'Client' ">
+            <Output TaskParameter="TargetOutputs" ItemName="_ClientProjectWithProjectSubType" />
+        </MSBuild>
+
+        <!-- Get the .xap from Silverlight Client project.  -->
+        <MSBuild Projects="%(_ClientProjectWithProjectSubType.ProjectFullPath)"
+                 Targets="GetXapOutputFile"
+                 Condition=" '%(ProjectSubType)' == 'Silverlight' ">
+            <Output TaskParameter="TargetOutputs"
+                    ItemName="_ClientXap"/>
+        </MSBuild>
+
+        <ValidateTargetSqlPlatform Condition=" $(ExecuteSchemaDeploy) "
+                                   DatabaseProject="@(_DatabaseProjectItem)"
+                                   TargetConnectionString="$(PublishConnectionString)" />
+    </Target>
+
+    <Target Name="ProcessWebPublishProperties"
+            Condition=" '$(_PublishWeb)' == 'true' ">
+        <GetWebDeployPublishMethod ServiceUrl="$(PublishUrl)">
+            <Output TaskParameter="PublishMethod" PropertyName="_MSDeployPublishMethod" />
+        </GetWebDeployPublishMethod>
+
+        <PropertyGroup>
+            <_UseWMSVC>false</_UseWMSVC>
+            <_UseWMSVC Condition=" '$(_MSDeployPublishMethod)' == 'WMSVC' ">true</_UseWMSVC>
+            <_UseRemoteAgent>false</_UseRemoteAgent>
+            <_UseRemoteAgent Condition=" '$(_MSDeployPublishMethod)' == 'RemoteAgent' ">true</_UseRemoteAgent>
+            <_AuthType>Basic</_AuthType>
+            <_AuthType Condition=" !$(_UseWMSVC) ">NTLM</_AuthType>
+            <DeployIisAppPath>$(PublishSite)</DeployIisAppPath>
+            <WebPublishMethod>MSDeploy</WebPublishMethod>
+        </PropertyGroup>
+
+        <NormalizeServiceUrl ServiceUrl="$(PublishUrl)"
+                             UseWMSVC="$(_UseWMSVC)"
+                             UseRemoteAgent="$(_UseRemoteAgent)"
+                             Condition=" '$(_MSDeployPublishMethod)' != 'INPROC' ">
+            <Output TaskParameter="ResultUrl" PropertyName="_MSDeployServiceUrl" />
+        </NormalizeServiceUrl>
+
+        <ItemGroup>
+            <MsDeployDestinationProviderSetting Remove="@(MsDeployDestinationProviderSetting)" />
+            <MsDeployDestinationProviderSetting Include="auto">
+                <ComputerName>$(_MSDeployServiceUrl)</ComputerName>
+                <UserName>$(PublishUserName)</UserName>
+                <Password>$(PublishUserPassword)</Password>
+                <EncryptPassword>$(DeployEncryptKey)</EncryptPassword>
+                <IncludeAcls>False</IncludeAcls>
+                <AuthType>$(_AuthType)</AuthType>
+            </MsDeployDestinationProviderSetting>
+        </ItemGroup>
+    </Target>
+
+    <Target Name="UpdateConfigFile">
+        <PropertyGroup>
+            <_ConnectionString>$(ClientConnectionString)</_ConnectionString>
+            <_IntermediateWebConfigTransformPath>%(_ConfigFile.Identity).transformed</_IntermediateWebConfigTransformPath>
+        </PropertyGroup>
+        <PropertyGroup Condition="$(_ConnectionString) == '' ">
+            <_ConnectionString>$(PublishConnectionString)</_ConnectionString>
+        </PropertyGroup>
+        <PropertyGroup Condition=" '$(_GenerateSchemaScript)' == 'true' and '$(_PackageWeb)' == 'true' ">
+            <_ConnectionString>$(ConnectionStringPlaceHolder)</_ConnectionString>
+        </PropertyGroup>
+        <PropertyGroup>
+            <_AdministratorUserName>$(AdministratorUserName)</_AdministratorUserName>
+            <_AdministratorFullName>$(AdministratorFullName)</_AdministratorFullName>
+            <_AdministratorPassword>$(AdministratorPassword)</_AdministratorPassword>
+        </PropertyGroup>
+        <PropertyGroup Condition=" '$(_AddAdministratorToPackage)' == 'true' " >
+            <_AdministratorUserName>$(AdministratorUserNamePlaceholder)</_AdministratorUserName>
+            <_AdministratorFullName>$(AdministratorFullNamePlaceholder)</_AdministratorFullName>
+            <_AdministratorPassword>$(AdministratorPasswordPlaceholder)</_AdministratorPassword>
+        </PropertyGroup>
+
+        <ItemGroup>
+            <AdminUserSetting Include="Microsoft.LightSwitch.Admin.UserName" >
+                <ConfigPath>/configuration/appSettings/add[@key="Microsoft.LightSwitch.Admin.UserName"]/@value</ConfigPath>
+                <Value>$(_AdministratorUserName)</Value>
+            </AdminUserSetting>
+            <AdminUserSetting Include="Microsoft.LightSwitch.Admin.FullName" Condition=" '$(AuthenticationType)' == 'Forms' ">
+                <ConfigPath>/configuration/appSettings/add[@key="Microsoft.LightSwitch.Admin.FullName"]/@value</ConfigPath>
+                <Value>$(_AdministratorFullName)</Value>
+            </AdminUserSetting>
+            <AdminUserSetting Include="Microsoft.LightSwitch.Admin.Password" Condition=" '$(AuthenticationType)' == 'Forms' " >
+                <ConfigPath>/configuration/appSettings/add[@key="Microsoft.LightSwitch.Admin.Password"]/@value</ConfigPath>
+                <Value>$(_AdministratorPassword)</Value>
+            </AdminUserSetting>
+        </ItemGroup>
+
+        <PropertyGroup Condition=" '$(EnableWindowsAuthentication)' == '' and '$(AuthenticationType)' != 'None' ">
+            <EnableWindowsAuthentication>false</EnableWindowsAuthentication>
+            <EnableWindowsAuthentication Condition=" '$(AuthenticationType)' == 'Windows' or $(_IsSharePointServerToServer) ">true</EnableWindowsAuthentication>
+        </PropertyGroup>
+        <PropertyGroup Condition=" '$(EnableAnonymousAuthentication)' == '' and '$(AuthenticationType)' != 'None' ">
+            <EnableAnonymousAuthentication>true</EnableAnonymousAuthentication>
+            <EnableAnonymousAuthentication Condition=" '$(AuthenticationType)' == 'Windows' or $(_IsSharePointServerToServer) ">false</EnableAnonymousAuthentication>
+        </PropertyGroup>
+
+        <WriteToConfigFile ConfigFile="%(_ConfigFile.Identity)"
+                           PublishParameters="@(_PublishParameters)"
+                           Condition=" '@(_ConfigFile)' != '' " />
+
+        <WriteToConfigFile ConfigFile="%(_ConfigFile.Identity)"
+                           PublishParameters="@(AdminUserSetting)"
+                           Condition ="' @(_ConfigFile)' != '' and '$(AddAdministrator)' == 'true' and '$(AuthenticationType)' != 'None' "/>
+
+        <SetConnectionString ConfigFile="%(_ConfigFile.Identity)"
+                             Name="$(ConnectionStringName)"
+                             ConnectionString="$(_ConnectionString)"
+                             ProviderName="$(ConnectionProvider)"
+                             RequiresIntrinsicDataSource="$(RequiresIntrinsicDataSource)"
+                             ServerType="$(ApplicationServerType)"
+                             Condition=" '@(_ConfigFile)' != '' " />
+
+        <EnableAuthenticationValues ConfigFile="%(_ConfigFile.Identity)"
+                                    EnableWindowsAuthentication="$(EnableWindowsAuthentication)"
+                                    EnableAnonymousAuthentication="$(EnableAnonymousAuthentication)"
+                                    Condition=" '@(_ConfigFile)' != '' and '$(AuthenticationType)' != 'None' and '$(UseAppHostAuthOverride)' == 'true' " />
+
+        <CallTarget Targets="UpdateWebConfigForProviderHostedSharePoint" />
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="GetProjectConfigTransformFileName"
+                 ContinueOnError="true"
+                 RebaseOutputs="true"
+                 Condition=" '%(Type)' == 'Server' ">
+            <Output TaskParameter="TargetOutputs" PropertyName="_ProjectConfigTransformFileName" />
+        </MSBuild>
+
+        <!-- TransformXml doesn't support using the same file for source and destination so use a temporary output location. -->
+        <TransformXml Source="%(_ConfigFile.Identity)"
+                      Transform="$(_ProjectConfigTransformFileName)"
+                      Destination="$(_IntermediateWebConfigTransformPath)"
+                      Condition=" '$(_ProjectConfigTransformFileName)' != '' "/>
+        <Copy SourceFiles="$(_IntermediateWebConfigTransformPath)" DestinationFiles="%(_ConfigFile.Identity)" />
+        <Delete Files="$(_IntermediateWebConfigTransformPath)" />
+    </Target>
+
+    <Target Name="UpdateConfigFileForHtmlClients">
+        <ItemGroup>
+            <_JScriptClientProjects Include="%(_ClientProjectWithProjectSubType.Identity)"
+                                    Condition=" '%(ProjectSubType)' == 'JScript' " />
+        </ItemGroup>
+        <UpdateWebConfigForHtmlClients ConfigFile="%(_ConfigFile.Identity)"
+                                       ClientProjects="@(_JScriptClientProjects)"
+                                       AuthenticationType="$(AuthenticationType)" />
+    </Target>
+
+    <Target Name="UpdateDefaultFile">
+        <ItemGroup>
+            <_DefaultHtmFile Include="%(_PublishFile.Identity)$(PublishFileExtension)"
+                             Condition=" '%(_PublishFile.Filename)%(_PublishFile.Extension)' == 'default.htm' "/>
+        </ItemGroup>
+
+        <UpdateDefaultFile Files="@(_DefaultHtmFile)"
+                           Title="$(ApplicationName)"
+                           ApplicationVersion="$(AssemblyVersion)"
+                           UpdateXapSource="$(_IsBrowserApplication)"
+                           Condition="'@(_DefaultHtmFile)' != ''"/>
+    </Target>
+
+    <Target Name="GetApplicationCulture">
+        <GetApplicationCulture ConfigFile="%(_ConfigFile.Identity)"
+                               Condition=" '@(_ConfigFile)' != '' and '$(ApplicationCulture)' == '' ">
+            <Output TaskParameter="ApplicationCulture" PropertyName="ApplicationCulture" />
+        </GetApplicationCulture>
+    </Target>
+
+    <Target Name="CreateDatabaseUserScript">
+        <PropertyGroup>
+            <_CreateUserDatabaseName>$(_DatabaseName)</_CreateUserDatabaseName>
+            <_CreateUserOutputScript>%(_CreateUserScriptFile.FullPath)</_CreateUserOutputScript>
+        </PropertyGroup>
+
+        <GetSqlInitialCatalog ConnectionString="$(ClientConnectionString)"
+                              Condition=" ('$(PublishNewDatabase)' != 'true' or $(_GenerateSchemaDacPackage)) and '$(ClientConnectionString)' != '' ">
+            <Output TaskParameter="InitialCatalog" PropertyName="_CreateUserDatabaseName" />
+        </GetSqlInitialCatalog>
+
+        <PropertyGroup>
+            <_CreateUserDatabaseName Condition=" '$(_CreateUserDatabaseName)' == '' ">$(ApplicationName)</_CreateUserDatabaseName>
+        </PropertyGroup>
+
+        <CreateSqlUserScripts OutputScript="$(_CreateUserOutputScript)"
+                              AuthenticationType="$(AuthenticationType)"
+                              DatabaseName="$(_CreateUserDatabaseName)"
+                              UserName="$(SqlUserName)"
+                              TargetSqlAzure="$(_IsTargetSqlServerAzure)"
+                              Condition=" $(_PackageWeb) or '$(DeploySchema)' != 'true'" />
+
+        <CreateSqlUserWebScripts OutputScript="%(_SqlScriptFile.FullPath)"
+                                 AuthenticationType="$(AuthenticationType)"
+                                 Condition=" $(_PackageWeb) and '$(DeploySchema)' == 'true' " />
+    </Target>
+
+    <Target Name="PublishSchemaToScript">
+        <PropertyGroup Condition=" '$(PublishNewDatabase)' != 'true' ">
+            <_PublishSchemaConnectionString>$(PublishSchemaConnectionString)</_PublishSchemaConnectionString>
+        </PropertyGroup>
+        <PropertyGroup Condition=" '$(PublishNewDatabase)' == 'true'">
+            <_DatabaseName>$(DefaultDatabaseName)</_DatabaseName>
+        </PropertyGroup>
+        <PropertyGroup Condition=" '$(_PackageWeb)' == 'true' ">
+            <_PostProcessScript>true</_PostProcessScript>
+        </PropertyGroup>
+
+        <PublishSchemaToScript OutputScript="%(_SqlScriptFile.FullPath)"
+                               DatabaseName="$(_DatabaseName)"
+                               ConnectionString="$(_PublishSchemaConnectionString)"
+                               PostProcessScript="$(_PostProcessScript)"
+                               ServerArtifactsFolder="$(_ServerArtifactsFolder)"
+                               Collation="$(DatabaseCollation)"
+                               IntrinsicDacPackageFilePath="$(_IntrinsicDacPackageFilePath)"
+                               DatabaseProject="@(_DatabaseProjectItem)"
+                               Inputs="@(ServerMetadataFiles)"
+                               ProjectPath="$(MSBuildProjectFullPath)" />
+    </Target>
+
+    <Target Name="PublishSchemaToDacPackage">
+        <PublishSchemaToDacPackage ServerArtifactsFolder="$(_ServerArtifactsFolder)"
+                                   Collation="$(DatabaseCollation)"
+                                   IntrinsicDacPackageFilePath="$(_IntrinsicDacPackageFilePath)"
+                                   OutputDacPackageFilePath="$(PublishLocation)$(OutputDacPackageFileName)"
+                                   TargetSqlAzure="$(_IsTargetSqlServerAzure)"
+                                   TargetSqlServerVersion="$(_TargetSqlServerVersion)"
+                                   IncludeSecurityDBObjects="true"
+                                   DatabaseProject="@(_DatabaseProjectItem)"
+                                   Inputs="@(ServerMetadataFiles)"
+                                   ProjectPath="$(MSBuildProjectFullPath)" />
+    </Target>
+
+    <Choose>
+        <When Condition=" $(_GenerateSchemaScript) ">
+            <PropertyGroup>
+                <PublishSchemaDependsOn>
+                    PublishSchemaToScript;
+                    CreateDatabaseUserScript;
+                </PublishSchemaDependsOn>
+            </PropertyGroup>
+        </When>
+        <When Condition=" $(_GenerateSchemaDacPackage) ">
+            <PropertyGroup>
+                <PublishSchemaDependsOn>
+                    PublishSchemaToDacPackage;
+                    CreateDatabaseUserScript;
+                </PublishSchemaDependsOn>
+            </PropertyGroup>
+        </When>
+    </Choose>
+
+    <Target Name="PublishSchema"
+            DependsOnTargets="$(PublishSchemaDependsOn)"
+            Condition=" $(ExecuteSchemaPublish) " />
+
+    <PropertyGroup>
+        <PublishApplicationDependsOn>
+            BeforePublishApplication;
+            PublishAzureApplication;
+            PublishIisApplication;
+            PublishDesktopApplication;
+            PublishSharePointApplication;
+            AfterPublishApplication;
+        </PublishApplicationDependsOn>
+    </PropertyGroup>
+
+    <Target Name="BeforePublishApplication" />
+
+    <Target Name="PublishApplication" DependsOnTargets="$(PublishApplicationDependsOn)" />
+
+    <Target Name="AfterPublishApplication" />
+
+    <Choose>
+        <When Condition=" $(_IsSharePointAutoHosted) ">
+            <PropertyGroup>
+                <PublishSharePointApplicationDependsOn>
+                    PrepareSharePointPublish;
+                    GenerateDacPackageForSharePoint;
+                    PackageSharePointProject;
+                </PublishSharePointApplicationDependsOn>
+            </PropertyGroup>
+        </When>
+        <When Condition=" $(_IsSharePointProviderHosted) ">
+            <PropertyGroup>
+                <PublishSharePointApplicationDependsOn>
+                    PrepareSharePointPublish;
+                    PackageSharePointProject;
+                </PublishSharePointApplicationDependsOn>
+            </PropertyGroup>
+        </When>
+    </Choose>
+
+    <Target Name="PublishSharePointApplication" DependsOnTargets="$(PublishSharePointApplicationDependsOn)" Condition=" '$(_PublishSharePoint)' == 'true' " />
+
+    <Target Name="GenerateDacPackageForSharePoint"
+            Condition=" $(RequiresIntrinsicDataSource) ">
+        <PropertyGroup>
+            <_TempDbFolder>$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)TempDatabase</_TempDbFolder>
+            <_OutputSharePointDacPackageFilePath>$(_TempDbFolder)\$(MSBuildProjectName).dacpac</_OutputSharePointDacPackageFilePath>
+        </PropertyGroup>
+        <PublishSchemaToDacPackage ServerArtifactsFolder="$(_ServerArtifactsFolder)"
+                                   Collation="$(DatabaseCollation)"
+                                   IntrinsicDacPackageFilePath="$(_IntrinsicDacPackageFilePath)"
+                                   OutputDacPackageFilePath="$(_OutputSharePointDacPackageFilePath)"
+                                   TargetSqlAzure="true"
+                                   IncludeSecurityDBObjects="false"
+                                   DatabaseProject="@(_DatabaseProjectItem)"
+                                   Inputs="@(ServerMetadataFiles)"
+                                   ProjectPath="$(MSBuildProjectFullPath)" />
+    </Target>
+
+    <Target Name="PrepareSharePointPublish">
+        <ItemGroup>
+            <_SharePointProject Include="@(ProjectReference)"
+                                Condition=" '%(Type)' == 'SharePoint' " />
+        </ItemGroup>
+    </Target>
+
+    <Target Name="UpdateWebConfigForProviderHostedSharePoint"
+            Condition=" $(_IsSharePointProviderHosted) "
+            DependsOnTargets="PrepareSharePointPublish">
+
+        <GetSharePointSettings SharePointProject="@(_SharePointProject)"
+                               ProviderHostedPublishProfileName="$(SharePointProviderHostedPublishProfileName)">
+            <Output PropertyName="_SPProjectClientId" TaskParameter="ClientId" />
+            <Output PropertyName="_SPProjectClientSecret" TaskParameter="ClientSecret" />
+        </GetSharePointSettings>
+
+        <SetAppSetting ConfigFile="%(_ConfigFile.Identity)"
+                       AppSettingName="ClientId"
+                       AppSettingValue="$(_SPProjectClientId)" />
+
+        <SetAppSetting Condition=" '$(_SPProjectClientSecret)' != '' and !$(_IsSharePointServerToServer) "
+                       ConfigFile="%(_ConfigFile.Identity)"
+                       AppSettingName="ClientSecret"
+                       AppSettingValue="$(_SPProjectClientSecret)" />
+
+        <CallTarget Targets="UpdateWebConfigForSharePointServerToServerAuth" />
+    </Target>
+
+    <Target Name="UpdateWebConfigForSharePointServerToServerAuth"
+            Condition=" $(_IsSharePointServerToServer) ">
+
+        <DecryptPassword EncryptedPassword="$(SharePointServerToServerCertificatePassword)">
+            <Output PropertyName="_DecryptedSharePointServerToServerCertificatePassword" TaskParameter="DecryptedPassword" />
+        </DecryptPassword>
+
+        <SetServerToServerSettings ConfigFile="%(_ConfigFile.Identity)"
+                                   CertificatePath="$(SharePointServerToServerCertificatePath)"
+                                   CertificatePassword="$(_DecryptedSharePointServerToServerCertificatePassword)"
+                                   CertificateIssuerId="$(SharePointServerToServerCertificateIssuerId)" />
+    </Target>
+
+    <Target Name="PackageSharePointProject">
+        <PropertyGroup>
+            <_SPPublishDir>$(PublishLocation)</_SPPublishDir>
+            <!-- Generate an absolute path if it isn't already -->
+            <_SPPublishDir Condition=" !$(_SPPublishDir.Contains(':')) ">$(MSBuildProjectDirectory)\$(_SPPublishDir)</_SPPublishDir>
+            <_MSDeployPackagePathForSharePoint>$(_PackageDestinationPath)</_MSDeployPackagePathForSharePoint>
+            <_MSDeployPackagePathForSharePoint Condition=" '$(_MSDeployPackagePathForSharePoint)' == '' ">nothing.zip</_MSDeployPackagePathForSharePoint>
+            <_SPPublishBuildProperties>PublishDir=$(_SPPublishDir);IsPackaging=true;IsDebugging=false;AppCloudPackage=$(_MSDeployPackagePathForSharePoint);PublishedFrom=$(PublishedFrom)</_SPPublishBuildProperties>
+            <_SPPublishBuildProperties Condition=" $(_IsSharePointAutoHosted) ">$(_SPPublishBuildProperties);SqlPackage=$(_OutputSharePointDacPackageFilePath)</_SPPublishBuildProperties>
+            <_SPPublishBuildProperties Condition=" $(_IsSharePointProviderHosted) ">$(_SPPublishBuildProperties);ActivePublishProfile=$(SharePointProviderHostedPublishProfileName)</_SPPublishBuildProperties>
+        </PropertyGroup>
+
+        <MSBuild Projects="@(_SharePointProject)"
+                 Properties="$(_SPPublishBuildProperties)"
+                 Targets="CreatePackage"/>
+    </Target>
+
+    <Choose>
+        <When Condition="$(SkipPublishAzurePackage)">
+            <PropertyGroup>
+                <PublishAzureApplicationDependsOn>
+                    CreateLightSwitchWebRole;
+                    EnsurePublishLocationExists;
+                    CreateAzurePackage;
+                </PublishAzureApplicationDependsOn>
+            </PropertyGroup>
+        </When>
+        <Otherwise>
+            <PropertyGroup>
+                <PublishAzureApplicationDependsOn>
+                    CreateLightSwitchWebRole;
+                    CreateAzurePackage;
+                    PublishAzurePackage
+                </PublishAzureApplicationDependsOn>
+            </PropertyGroup>
+        </Otherwise>
+    </Choose>
+
+    <Target Name="PublishAzureApplication" DependsOnTargets="$(PublishAzureApplicationDependsOn)" Condition=" '$(_PublishAzure)' == 'true' " />
+
+    <Target Name="CreateAzurePackage">
+        <ItemGroup>
+            <ServiceDefinitionFileItem Include="$(ServiceDefinitionFile)" />
+            <ServiceConfigurationFileItem Include="$(ServiceConfigurationFile)" />
+        </ItemGroup>
+
+        <Copy SourceFiles="$(ServiceDefinitionFile);$(ServiceConfigurationFile)" DestinationFolder="$(OutDir)" />
+
+        <ItemGroup>
+            <_BuiltServiceDefinitionFile Include="$(OutDir)\%(ServiceDefinitionFileItem.Filename)%(ServiceDefinitionFileItem.Extension)" />
+            <_BuiltServiceConfigurationFile Include="$(OutDir)\%(ServiceConfigurationFileItem.Filename)%(ServiceConfigurationFileItem.Extension)" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <_BuiltServiceDefinitionFile_FullPath>%(_BuiltServiceDefinitionFile.FullPath)</_BuiltServiceDefinitionFile_FullPath>
+            <_BuiltServiceConfigurationFile_FullPath>%(_BuiltServiceConfigurationFile.FullPath)</_BuiltServiceConfigurationFile_FullPath>
+            <_AzurePackageOutputPath Condition=" !$(SkipPublishAzurePackage) ">$(OutDir)$(OutputAzurePackageFileName)</_AzurePackageOutputPath>
+            <_AzurePackageOutputPath Condition=" $(SkipPublishAzurePackage) ">$(PublishLocation)$(OutputAzurePackageFileName)</_AzurePackageOutputPath>
+        </PropertyGroup>
+
+        <UpdateAzureSslCertificate ServiceConfigurationFile="$(_BuiltServiceConfigurationFile_FullPath)"
+                                   ServiceDefinitionFile="$(_BuiltServiceDefinitionFile_FullPath)"
+                                   CertificateThumbprint="$(SslCertificateThumbprint)"
+                                   CertificateThumbprintAlgorithm="$(SslCertificateThumbprintAlgorithm)"
+                                   RoleName="$(ServiceConfigurationRoleName)"
+                                   CertificateName="$(ServiceConfigurationCertificateName)"
+                                   SecureConnectionRequired="$(RequireSecureConnection)" />
+
+        <UpdateAzureOSVersion ServiceConfigurationFile="$(_BuiltServiceConfigurationFile_FullPath)" />
+
+        <ItemGroup>
+            <_LightSwitchServerAssemblyFile Include="%(_BuildFile.Identity)" Condition=" '%(_BuildFile.Filename)%(_BuildFile.Extension)' == 'Microsoft.LightSwitch.Server.dll' " />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <_LightSwitchServerAssemblyFilePath>%(_LightSwitchServerAssemblyFile.Identity)</_LightSwitchServerAssemblyFilePath>
+        </PropertyGroup>
+
+        <UpdateAzureBindingRedirects Condition=" !$(SkipUpdateAzureBindingRedirects) "
+                                     ConfigFile="%(_ConfigFile.Identity)"
+                                     PublishVersion="$(LightSwitchPublishVersion)"
+                                     ServerAssemblyPath="$(_LightSwitchServerAssemblyFilePath)" />
+
+        <PropertyGroup>
+            <_ConnectionString>$(ClientConnectionString)</_ConnectionString>
+        </PropertyGroup>
+        <PropertyGroup Condition="$(_ConnectionString) == '' ">
+            <_ConnectionString>$(PublishConnectionString)</_ConnectionString>
+        </PropertyGroup>
+        <ItemGroup Condition=" '$(RequiresIntrinsicDataSource)' == 'true' ">
+            <_AzurePublishParameters Include="$(ConnectionStringName)">
+                <Value>$(_ConnectionString)</Value>
+                <ConfigPath>/configuration/connectionStrings/add[@name='$(ConnectionStringName)']/@connectionString</ConfigPath>
+            </_AzurePublishParameters>
+        </ItemGroup>
+        <ItemGroup>
+            <_AzurePublishParameters Include="@(_PublishParameters)" />
+        </ItemGroup>
+
+        <SetAzureSDKSchemaVersion ServiceConfigurationFile="$(_BuiltServiceConfigurationFile_FullPath)"
+                                  ServiceDefinitionFile="$(_BuiltServiceDefinitionFile_FullPath)"
+                                  AzureSdkVersion="$(ActiveAzureSdkVersion)"
+                                  AzureSchemaVersion="$(AzureSchemaVersion)" />
+
+        <AddConnectionStringsToAzureConfiguration ServiceConfigurationFile="$(_BuiltServiceConfigurationFile_FullPath)"
+                                                  ServiceDefinitionFile="$(_BuiltServiceDefinitionFile_FullPath)"
+                                                  RoleName="$(ServiceConfigurationRoleName)"
+                                                  PublishParameters="@(_AzurePublishParameters)"
+                                                  Condition=" '@(_PublishParameters)' != '' " />
+
+        <CSPack ServiceDefinitionFile="$(_BuiltServiceDefinitionFile_FullPath)"
+                Output="$(_AzurePackageOutputPath)"
+                PackRoles="@(Roles)"
+                SiteMapping="@(SiteMapping)"
+                RoleProperties="@(RoleProperties)"
+                CopyOnly="false" />
+
+        <Copy Condition=" $(SkipPublishAzurePackage) " SourceFiles="$(_BuiltServiceConfigurationFile_FullPath)" DestinationFolder="$(PublishLocation)" />
+    </Target>
+
+    <Target Name="PublishAzurePackage">
+        <PropertyGroup>
+            <_DeploymentLabel>$(AzureDeploymentLabel)</_DeploymentLabel>
+            <_DeploymentLabel Condition=" '$(AzureDeploymentLabel)' == '' ">$(ApplicationName)</_DeploymentLabel>
+        </PropertyGroup>
+
+        <AppendTimestampToDeploymentLabel DeploymentLabel="$(_DeploymentLabel)"
+                                          Condition=" '$(AzureAppendTimestampToDeploymentLabel)' == 'true' ">
+            <Output TaskParameter="FormattedDeploymentLabel" PropertyName="_DeploymentLabel" />
+        </AppendTimestampToDeploymentLabel>
+
+        <PublishAzurePackage Package="$(_AzurePackageOutputPath)"
+                             DeploymentLabel="$(_DeploymentLabel)"
+                             SubscriptionId="$(AzureSubscriptionId)"
+                             ManagementThumbprint="$(AzureManagementThumbprint)"
+                             HostedServiceName="$(AzureHostedService)"
+                             HostedServiceLabel="$(AzureHostedServiceLabel)"
+                             StorageServiceName="$(AzureStorageService)"
+                             ServiceConfigurationFile="$(_BuiltServiceConfigurationFile_FullPath)"
+                             ServiceBindingMaxLength="$(ServiceBindingMaxLength)"
+                             UpgradeDeployment="$(AzureAllowUpgrade)"
+                             ServiceManagementEndpoint="$(AzureServiceManagementEndpoint)" />
+    </Target>
+
+    <Target Name="CreateLightSwitchWebRole" Condition=" '$(IncludeLightSwitchWebRole)' == 'true' ">
+        <ItemGroup>
+            <Roles Include="$(PublishOutDir)">
+                <RoleType>Web</RoleType>
+                <RoleName>$(ServiceConfigurationRoleName)</RoleName>
+                <EntryPoint></EntryPoint>
+                <SourceDir>$(PublishOutDir)</SourceDir>
+            </Roles>
+            <RoleProperties Include="$(ServiceConfigurationRoleName)">
+                <EntryPoint></EntryPoint>
+                <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+            </RoleProperties>
+            <SiteMapping Include="Web:$(ServiceConfigurationRoleName)">
+                <PhysicalPath>$(PublishOutDir)</PhysicalPath>
+            </SiteMapping>
+
+        </ItemGroup>
+    </Target>
+
+    <Target Name="PublishIisApplication"
+            DependsOnTargets="PublishIisCommon;PublishIisToWeb;PublishIisToPackage"
+            Condition=" '$(_PublishWeb)' == 'true' or '$(_PackageWeb)' == 'true' ">
+    </Target>
+
+    <!-- Common operations for Publish IIS to Web and Publish IIS to Package. -->
+    <Target Name="PublishIisCommon">
+        <ItemGroup>
+            <_PublishProfileOutputDirItem Include="$(_PublishProfileOutputDir)" />
+        </ItemGroup>
+        <PropertyGroup>
+            <_PackageDestinationPath>%(_PublishLocationItem.FullPath)\$(MSBuildProjectName).zip</_PackageDestinationPath>
+            <_ServerProjectExtension>%(_ServerProjectItem.Extension)</_ServerProjectExtension>
+            <_ServerProjectIsVbproj>$(_ServerProjectExtension.Contains(".vbproj"))</_ServerProjectIsVbproj>
+            <_ServerProjectIsCsproj>$(_ServerProjectExtension.Contains(".csproj"))</_ServerProjectIsCsproj>
+            <_ServerProjectPublishProfileDir Condition=" '$(_ServerProjectIsVbproj)' =='true'" >$(ProjectDir)\$(_ServerProjectName)\My Project\PublishProfiles\</_ServerProjectPublishProfileDir>
+            <_ServerProjectPublishProfileDir Condition=" '$(_ServerProjectIsCsproj)' =='true'" >$(ProjectDir)\$(_ServerProjectName)\Properties\PublishProfiles\</_ServerProjectPublishProfileDir>
+            <_PublishProfile>$(_ServerProjectPublishProfileDir)LightSwitchProfile.pubxml</_PublishProfile>
+            <_PublishProfileOutputDirFullPath>%(_PublishProfileOutputDirItem.FullPath)</_PublishProfileOutputDirFullPath>
+            <_PublishProfileOutputDirFullPath Condition=" !HasTrailingSlash('$(_PublishProfileOutputDirFullPath)')">$(_PublishProfileOutputDirFullPath)\</_PublishProfileOutputDirFullPath>
+            <_LSPublishProfile>$(_PublishProfileOutputDirFullPath)LightSwitchProfile.pubxml</_LSPublishProfile>
+            <_SingleFolderToPublish>%(_PublishOutDirItem.FullPath)</_SingleFolderToPublish>
+            <_SharePointPublishProfilePath Condition=" $(_IsSharePointProviderHosted) ">$(_ServerProjectPublishProfileDir)$(SharePointProviderHostedPublishProfileName).pubxml</_SharePointPublishProfilePath>
+        </PropertyGroup>
+
+        <ItemGroup>
+            <_LSPublishProfileCopyItems Remove="@(_LSPublishProfileCopyItems)" />
+            <_LSPublishProfileCopyItems Include="$(_LSPublishProfile)" />
+            <_LSPublishProfileCopyItems Include="$(_LSPublishProfile).user" />
+        </ItemGroup>
+
+        <ItemGroup>
+            <_ProfileSetting Remove="@(_ProfileSetting)" />
+            <_UserProfileSetting Remove="@(_UserProfileSetting)" />
+            <_RelativeProfileSetting Remove="@(_RelativeProfileSetting)" />
+            <_UserRelativeProfileSetting Remove="@(_UserRelativeProfileSetting)" />
+        </ItemGroup>
+
+        <ItemGroup Condition=" '$(_PublishWeb)' == 'true' ">
+            <_ProfileSetting Include="WebPublishMethod">
+                <Value>MSDeploy</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="UseLightSwitchWebDeploymentProvider">
+                <Value>$(UseLightSwitchWebDeploymentProvider)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="AuthenticationType">
+                <Value>$(AuthenticationType)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="MSDeployServiceURL">
+                <Value>$(PublishUrl)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="DeployIisAppPath">
+                <Value>$(PublishSite)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="AllowUntrustedCertificate">
+                <Value>$(AllowUntrustedCertificate)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="SkipExtraFilesOnServer">
+                <Value>$(SkipExtraFilesOnServer)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="DeployAsIisApp">
+                <Value>True</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="MSDeployPublishMethod">
+                <Value>$(_MSDeployPublishMethod)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="UserName">
+                <Value>$(PublishUserName)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="SavePWD">
+                <Value>True</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="LightSwitchPublishVersion">
+                <Value>$(LightSwitchPublishVersion)</Value>
+            </_ProfileSetting>
+            <_UserProfileSetting Include="EncryptedPassword">
+                <Value>$(EncryptedPublishUserPassword)</Value>
+            </_UserProfileSetting>
+        </ItemGroup>
+
+        <ItemGroup Condition=" '$(_PackageWeb)' == 'true' ">
+            <_ProfileSetting Include="WebPublishMethod">
+                <Value>Package</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="UseLightSwitchWebDeploymentProvider">
+                <Value>$(UseLightSwitchWebDeploymentProvider)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="AuthenticationType">
+                <Value>$(AuthenticationType)</Value>
+            </_ProfileSetting>
+            <_RelativeProfileSetting Include="PackageLocation">
+                <Value>$(_PackageDestinationPath)</Value>
+            </_RelativeProfileSetting>
+            <_ProfileSetting Include="RequiresIntrinsicDataSource">
+                <Value>$(RequiresIntrinsicDataSource)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="DeployDatabase">
+                <Value>$(DeployDatabase)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="LightSwitchPublishVersion">
+                <Value>$(LightSwitchPublishVersion)</Value>
+            </_ProfileSetting>
+        </ItemGroup>
+
+        <Delete Files="@(_LSPublishProfileCopyItems)"
+                Condition=" Exists('%(FullPath)') "/>
+
+        <WritePublishProfile AddBeforeBuildTarget="false"
+                             Properties="@(_ProfileSetting)"
+                             ProjectFullPath="$(MSBuildProjectFullPath)"
+                             PublishProfile="$(_LSPublishProfile)"
+                             RelativeProperties="@(_RelativeProfileSetting)"
+                             RelativeToPath="$(ProjectDir)$(_ServerProjectName)"
+                             PublishProfileToMerge="$(_SharePointPublishProfilePath)" />
+
+        <WritePublishProfile AddBeforeBuildTarget="false"
+                             Properties="@(_UserProfileSetting)"
+                             ProjectFullPath="$(MSBuildProjectFullPath)"
+                             PublishProfile="$(_LSPublishProfile).user"
+                             RelativeProperties="@(_UserRelativeProfileSetting)"
+                             RelativeToPath="$(ProjectDir)$(_ServerProjectName)" />
+    </Target>
+
+    <Target Name="CreateSourceManifestForPackage" Condition=" '$(_PackageWeb)' == 'true' ">
+        <EscapeTextForRegularExpressions Text="%(_PublishOutDirItem.FullPath)">
+            <Output TaskParameter="Result" PropertyName="_EscapeRegEx_PublishOutDir" />
+        </EscapeTextForRegularExpressions>
+
+        <PropertyGroup>
+            <_ConfigFileName>%(_ConfigFile.Filename)%(_ConfigFile.Extension)</_ConfigFileName>
+            <_IisApp_ParameterName>$(MSBuildProjectName)_IisWebApplication</_IisApp_ParameterName>
+            <_PublishParameterClientConnectionString>Data Source={DatabaseServer};Database={DatabaseName};uid={DatabaseUserName};Pwd={DatabaseUserPassword};</_PublishParameterClientConnectionString>
+        </PropertyGroup>
+
+        <GetPasswordRegexTask Condition=" '$(AuthenticationType)' == 'Forms' "
+                              ConfigFile="$(OutDir)\$(_ConfigFileName)"
+                              OutDir="$(OutDir)">
+            <Output TaskParameter="PasswordRegex" PropertyName="_AdministratorPasswordRegEx" />
+        </GetPasswordRegexTask>
+
+        <PropertyGroup>
+            <_WebContentLocation>$([System.String]::Format($(IisAppPathFormat), $(DefaultInstallLocation)))</_WebContentLocation>
+            <_LightSwitchApplication_Path_DefaultValue>{$(_IisApp_ParameterName)}</_LightSwitchApplication_Path_DefaultValue>
+        </PropertyGroup>
+
+        <!-- Database parameters in the DeployDatabase = true scenario. -->
+        <ItemGroup Condition=" '$(RequiresIntrinsicDataSource)' == 'true' and '$(_GenerateSchemaScript)' == 'true' and '$(DeployDatabase)' == 'true' ">
+            <MsDeployDeclareParameters Include="DatabaseAdministratorConnectionString">
+                <Description>DatabaseAdministratorConnectionString_Description</Description>
+                <Tags>SQLConnectionString</Tags>
+            </MsDeployDeclareParameters>
+            <MsDeployDeclareParameters Include="DatabaseServer">
+                <Description>DatabaseServer_Description</Description>
+                <Tags>SQL</Tags>
+            </MsDeployDeclareParameters>
+            <MsDeployDeclareParameters Include="DatabaseName">
+                <Kind>SqlCommandVariable</Kind>
+                <Scope>%(_SqlScriptFile.Filename)%(_SqlScriptFile.Extension)</Scope>
+                <Match>DatabaseName</Match>
+                <Description>DatabaseName_Description</Description>
+                <DefaultValue>$(DefaultDatabaseName)</DefaultValue>
+                <Tags>SQL</Tags>
+            </MsDeployDeclareParameters>
+            <MsDeployDeclareParameters Include="$(DatabaseUserNamePlaceHolder)">
+                <Kind>SqlCommandVariable</Kind>
+                <Scope>%(_SqlScriptFile.Filename)%(_SqlScriptFile.Extension)</Scope>
+                <Match>$(DatabaseUserNamePlaceHolder)</Match>
+                <Description>DatabaseUserName_Description</Description>
+                <DefaultValue></DefaultValue>
+                <Tags>SQL</Tags>
+            </MsDeployDeclareParameters>
+            <MsDeployDeclareParameters Include="$(DatabaseUserPasswordPlaceHolder)">
+                <Kind>SqlCommandVariable</Kind>
+                <Scope>%(_SqlScriptFile.Filename)%(_SqlScriptFile.Extension)</Scope>
+                <Match>$(DatabaseUserPasswordPlaceHolder)</Match>
+                <Description>DatabaseUserPassword_Description</Description>
+                <DefaultValue></DefaultValue>
+                <Tags>SQL,Password,New</Tags>
+            </MsDeployDeclareParameters>
+            <MsDeployDeclareParameters Include="DefaultDataPath">
+                <Kind>SqlCommandVariable</Kind>
+                <Scope>%(_SqlScriptFile.Filename)%(_SqlScriptFile.Extension)</Scope>
+                <Match>DefaultDataPath</Match>
+                <DefaultValue></DefaultValue>
+                <Tags>SQL,Hidden</Tags>
+                <ExcludeFromSetParameter>true</ExcludeFromSetParameter>
+            </MsDeployDeclareParameters>
+
+            <MsDeployDeclareParameters Include="dbFullSql_Path">
+                <Kind>ProviderPath</Kind>
+                <Scope>dbFullSql</Scope>
+                <Match>%(_SqlScriptFile.Filename)%(_SqlScriptFile.Extension)</Match>
+                <DefaultValue>{DatabaseAdministratorConnectionString}</DefaultValue>
+                <Tags>Hidden</Tags>
+                <ExcludeFromSetParameter>true</ExcludeFromSetParameter>
+            </MsDeployDeclareParameters>
+
+            <MsDeployDeclareParameters Include="Update web.config connection string">
+                <Kind>XmlFile</Kind>
+                <Scope>$(_ConfigFileName)</Scope>
+                <Match>//connectionStrings/add[@name='$(ConnectionStringName)']/@connectionString</Match>
+                <DefaultValue>$(_PublishParameterClientConnectionString)</DefaultValue>
+                <Tags>Hidden</Tags>
+                <ExcludeFromSetParameter>true</ExcludeFromSetParameter>
+            </MsDeployDeclareParameters>
+        </ItemGroup>
+
+        <!-- MsDeployProviderInfo in the DeployDatabase = false scenario. -->
+        <ItemGroup Condition=" '$(RequiresIntrinsicDataSource)' == 'true' and '$(_GenerateSchemaScript)' == 'true' and '$(DeployDatabase)' == 'false' ">
+            <MsDeployDeclareParameters Include="DatabaseServer">
+                <Description>DatabaseServer_Description</Description>
+                <Tags>SQL</Tags>
+            </MsDeployDeclareParameters>
+            <MsDeployDeclareParameters Include="DatabaseName">
+                <Description>DatabaseName_Description</Description>
+                <DefaultValue>$(DefaultDatabaseName)</DefaultValue>
+                <Tags>SQL</Tags>
+            </MsDeployDeclareParameters>
+            <MsDeployDeclareParameters Include="$(DatabaseUserNamePlaceHolder)">
+                <Description>DatabaseUserName_Description</Description>
+                <DefaultValue></DefaultValue>
+                <Tags>SQL</Tags>
+            </MsDeployDeclareParameters>
+            <MsDeployDeclareParameters Include="$(DatabaseUserPasswordPlaceHolder)">
+                <Description>DatabaseUserPassword_Description</Description>
+                <DefaultValue></DefaultValue>
+                <Tags>SQL,Password,New</Tags>
+            </MsDeployDeclareParameters>
+            <MsDeployDeclareParameters Include="Update web.config connection string">
+                <Kind>XmlFile</Kind>
+                <Scope>$(_ConfigFileName)</Scope>
+                <Match>//connectionStrings/add[@name='$(ConnectionStringName)']/@connectionString</Match>
+                <DefaultValue>$(_PublishParameterClientConnectionString)</DefaultValue>
+                <Tags>Hidden</Tags>
+                <ExcludeFromSetParameter>true</ExcludeFromSetParameter>
+            </MsDeployDeclareParameters>
+        </ItemGroup>
+
+        <ItemGroup>
+            <MsDeployDeclareParameters Include="$(_IisApp_ParameterName)">
+                <Kind>ProviderPath</Kind>
+                <Scope>IisApp</Scope>
+                <Match>^$(_EscapeRegEx_PublishOutDir)$</Match>
+                <Description>IISAppLocation_Description</Description>
+                <DefaultValue>$(_WebContentLocation)</DefaultValue>
+                <Value>$(_WebContentLocation)</Value>
+                <Tags>IisApp</Tags>
+            </MsDeployDeclareParameters>
+
+            <MsDeployDeclareParameters Include="LightSwitchApplication_Path"
+                                       Condition=" '$(UseLightSwitchWebDeploymentProvider)' != 'false' ">
+                <Kind>ProviderPath</Kind>
+                <Scope>LightSwitchApplication</Scope>
+                <Match>^$(_EscapeRegEx_PublishOutDir)$</Match>
+                <DefaultValue>$(_LightSwitchApplication_Path_DefaultValue)</DefaultValue>
+                <Tags>Hidden</Tags>
+                <ExcludeFromSetParameter>true</ExcludeFromSetParameter>
+            </MsDeployDeclareParameters>
+
+            <MsDeployDeclareParameters Include="%(_PublishParameters.Identity)">
+                <Description>%(_PublishParameters.Description)</Description>
+                <Kind>XmlFile</Kind>
+                <Scope>$(_ConfigFileName)</Scope>
+                <Match>%(_PublishParameters.ConfigPath)</Match>
+                <DefaultValue>%(_PublishParameters.Value)</DefaultValue>
+                <Tags>%(_PublishParameters.Tags)</Tags>
+            </MsDeployDeclareParameters>
+        </ItemGroup>
+
+        <LocalizeDescription PropertyName="AdministratorUserName_PropertyName"
+                             Condition=" '$(_AddAdministratorToPackage)' == 'true' ">
+            <Output TaskParameter="LocalizedPropertyName" PropertyName="_LocalizedAdministratorUserName_PropertyName" />
+        </LocalizeDescription>
+        <LocalizeDescription PropertyName="AdministratorFullName_PropertyName"
+                             Condition=" '$(_AddAdministratorToPackage)' == 'true' ">
+            <Output TaskParameter="LocalizedPropertyName" PropertyName="_LocalizedAdministratorFullName_PropertyName" />
+        </LocalizeDescription>
+        <LocalizeDescription PropertyName="AdministratorPassword_PropertyName"
+                             Condition=" '$(_AddAdministratorToPackage)' == 'true' ">
+            <Output TaskParameter="LocalizedPropertyName" PropertyName="_LocalizedAdministratorPassword_PropertyName" />
+        </LocalizeDescription>
+
+        <ItemGroup Condition=" '$(_AddAdministratorToPackage)' == 'true' ">
+
+            <MsDeployDeclareParameters Include="$(_LocalizedAdministratorUserName_PropertyName)">
+                <Description>AdministratorUserName_Description</Description>
+                <Kind>XmlFile</Kind>
+                <Scope>$(_ConfigFileName)</Scope>
+                <Match>//appSettings/add[@key='Microsoft.LightSwitch.Admin.UserName' and @value='$(AdministratorUserNamePlaceholder)']/@value</Match>
+                <Tags>applicationSettings</Tags>
+            </MsDeployDeclareParameters>
+
+            <MsDeployDeclareParameters Include="$(_LocalizedAdministratorFullName_PropertyName)" Condition=" '$(AuthenticationType)' == 'Forms' ">
+                <Description>AdministratorFullName_Description</Description>
+                <Kind>XmlFile</Kind>
+                <Scope>$(_ConfigFileName)</Scope>
+                <Match>//appSettings/add[@key='Microsoft.LightSwitch.Admin.FullName' and @value='$(AdministratorFullNamePlaceholder)']/@value</Match>
+                <Tags>applicationSettings</Tags>
+            </MsDeployDeclareParameters>
+
+            <MsDeployDeclareParameters Include="$(_LocalizedAdministratorPassword_PropertyName)" Condition=" '$(AuthenticationType)' == 'Forms' ">
+                <Description>AdministratorPassword_Description</Description>
+                <Tags>Password,New,applicationSettings</Tags>
+                <Element>parameterValidation</Element>
+                <Kind>RegularExpression</Kind>
+                <validationString>$(_AdministratorPasswordRegEx)</validationString>
+            </MsDeployDeclareParameters>
+
+            <MsDeployDeclareParameters Include="$(_LocalizedAdministratorPassword_PropertyName)" Condition=" '$(AuthenticationType)' == 'Forms' ">
+                <Kind>XmlFile</Kind>
+                <Scope>$(_ConfigFileName)</Scope>
+                <Match>//appSettings/add[@key='Microsoft.LightSwitch.Admin.Password' and @value='$(AdministratorPasswordPlaceholder)']/@value</Match>
+                <DefaultValue>{$(_LocalizedAdministratorPassword_PropertyName)}</DefaultValue>
+                <Tags>Hidden</Tags>
+            </MsDeployDeclareParameters>
+
+        </ItemGroup>
+
+        <LocalizeDescription Parameters="@(MsDeployDeclareParameters)">
+            <Output TaskParameter="LocalizedParameters" ItemName="LocalizedMsDeployDeclareParameters" />
+        </LocalizeDescription>
+
+    </Target>
+
+    <Target Name="EnsurePublishLocationExists">
+        <MakeDir Directories="%(_PublishLocationItem.FullPath)"
+                 Condition=" !Exists(%(_PublishLocationItem.FullPath))" />
+    </Target>
+
+    <!-- Publish IIS to the Web. -->
+    <Target Name="PublishIisToWeb"
+            Condition="'$(_PublishWeb)' == 'true'">
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Properties="WPPAllFilesInSingleFolder=$(_SingleFolderToPublish);
+                             CleanWPPAllFilesInSingleFolder=false;
+                             ExcludeGeneratedDebugSymbol=$(ExcludeGeneratedDebugSymbolInPublish);
+                             PublishProfile=$(_LSPublishProfile);
+                             Password=$(PublishUserPassword);
+                             AutoParameterizationWebConfigConnectionStrings=false;
+                             WebDeploymentProvidersToUse=$(WebDeploymentProvidersToUse);
+                             AuthenticationType=$(AuthenticationType);
+                             LightSwitchPublishVersion=$(LightSwitchPublishVersion)"
+                 Targets="WebPublish"
+                 Condition=" '%(Type)' == 'Server' "/>
+
+        <WebDeployAppHostAuthOverride Condition=" '$(AuthenticationType)' != 'None' and '$(UseAppHostAuthOverride)' == 'true' "
+                                      Destination="@(MsDeployDestinationProviderSetting)"
+                                      SiteName="$(DeployIisAppPath)"/>
+
+        <!-- copy LightSwitch's publish profile to the WAP project.-->
+        <Copy SourceFiles="@(_LSPublishProfileCopyItems)" DestinationFolder="$([System.IO.Path]::GetDirectoryName($(_PublishProfile)))" />
+
+        <ItemGroup>
+            <_ProfileSetting Remove="@(_ProfileSetting)" />
+            <_RelativeProfileSetting Remove="@(_RelativeProfileSetting)" />
+
+            <_RelativeProfileSetting Include="WPPAllFilesInSingleFolder">
+                <Value>$(_SingleFolderToPublish)</Value>
+            </_RelativeProfileSetting>
+            <_ProfileSetting Include="CleanWPPAllFilesInSingleFolder">
+                <Value>False</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="ExcludeGeneratedDebugSymbol">
+                <Value>$(ExcludeGeneratedDebugSymbolInPublish)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="AutoParameterizationWebConfigConnectionStrings">
+                <Value>False</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="AuthenticationType">
+                <Value>$(AuthenticationType)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="LightSwitchPublishVersion">
+                <Value>$(LightSwitchPublishVersion)</Value>
+            </_ProfileSetting>
+        </ItemGroup>
+
+        <WritePublishProfile AddBeforeBuildTarget="true"
+                             ProjectFullPath="$(MSBuildProjectFullPath)"
+                             Properties="@(_ProfileSetting)"
+                             PublishProfile="$(_PublishProfile)"
+                             RelativeProperties="@(_RelativeProfileSetting)"
+                             RelativeToPath="$(ProjectDir)$(_ServerProjectName)\" />
+    </Target>
+
+    <PropertyGroup>
+        <PublishIisToPackageDependsOn>
+            CreateSourceManifestForPackage;
+            EnsurePublishLocationExists;
+        </PublishIisToPackageDependsOn>
+    </PropertyGroup>
+
+    <!-- Publish IIS to a MSDeployable package. -->
+    <Target Name="PublishIisToPackage"
+            DependsOnTargets="$(PublishIisToPackageDependsOn)"
+            Condition="'$(_PackageWeb)' == 'true'">
+        <ItemGroup>
+            <_MSDeploySourceManifest Include="$(OutDir)$(_OutputSourceManifestFileName)" />
+            <_LightSwitchParametersExcludeSetParameter Include="@(MsDeployDeclareParameters)" Condition=" '%(MsDeployDeclareParameters.ExcludeFromSetParameter)' == 'true' " />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <_ProjectParametersXMLFile>$(ProjectDir)\$(_ServerProjectName)\generated.parameters.xml</_ProjectParametersXMLFile>
+            <_MSDeploySourceManifestFullPath>%(_MSDeploySourceManifest.FullPath)</_MSDeploySourceManifestFullPath>
+            <_LightSwitchSqlScriptFileFullPath>%(_SqlScriptFile.FullPath)</_LightSwitchSqlScriptFileFullPath>
+            <LightSwitchExcludeSetParameter>@(_LightSwitchParametersExcludeSetParameter -> '{%(Identity)}', ';')</LightSwitchExcludeSetParameter>
+        </PropertyGroup>
+
+        <ExportParametersFile Parameters="@(LocalizedMsDeployDeclareParameters)"
+                              DeclareParameterFile="$(_ProjectParametersXMLFile)"
+                              GenerateFileEvenIfEmpty="True" />
+
+        <!--
+        Parameters:
+        WPPAllFilesInSingleFolder, overwrite WAProject's default PackageTmp.
+        CleanWPPAllFilesInSingleFolder, Lightswitch is responsible for cleaning the app.publish.
+        ExcludeGeneratedDebugSymbol = ExcludeGeneratedDebugSymbolInPublish
+        PackageSourceManifest, the location of the SourceManifest.xml.
+        IncludeSetAclProviderOnDestination=false, do not write setAcl to SourceManifest.xml
+        DisableAllVSGeneratedMSDeployParameter=true, stop generating generic parameters in paramters.xml
+        ProjectParametersXMLFile, the location of the generated.parameters.xml file.
+        PublishProfile, the location of the .pubxml file.
+        AutoParameterizationWebConfigConnectionStrings=true, generate Web.config and parameters.xml using auto parameterization service.
+        LightSwitchSqlScriptFile, the path to the generated schema script. A full path is preferred, but otherwise should be relative to the Server project file
+      -->
+        <MSBuild Projects="@(ProjectReference)"
+                 Properties="WPPAllFilesInSingleFolder=$(_SingleFolderToPublish);
+                           CleanWPPAllFilesInSingleFolder=false;
+                           ExcludeGeneratedDebugSymbol=$(ExcludeGeneratedDebugSymbolInPublish);
+                           PackageSourceManifest=$(_MSDeploySourceManifestFullPath);
+                           IncludeSetAclProviderOnDestination=false;
+                           DisableAllVSGeneratedMSDeployParameter=true;
+                           ProjectParametersXMLFile=$(_ProjectParametersXMLFile);
+                           PublishProfile=$(_LSPublishProfile);
+                           AutoParameterizationWebConfigConnectionStrings=true;
+                           LightSwitchSqlScriptFile=$(_LightSwitchSqlScriptFileFullPath);
+                           PackageLocation=$(_PackageDestinationPath);
+                           LightSwitchExcludeSetParameter=$(LightSwitchExcludeSetParameter);
+                           LightSwitchPublishVersion=$(LightSwitchPublishVersion);
+                           PackageSchemaType=$(_PackageSchemaType)"
+                 Targets="Package"
+                 Condition=" '%(Type)' == 'Server' "/>
+
+        <!-- copy LightSwitch's publish profile to the WAP project.-->
+        <Copy SourceFiles="@(_LSPublishProfileCopyItems)" DestinationFolder="$([System.IO.Path]::GetDirectoryName($(_PublishProfile)))" />
+
+        <ItemGroup>
+            <_ProfileSetting Remove="@(_ProfileSetting)" />
+            <_RelativeProfileSetting Remove="@(_RelativeProfileSetting)" />
+
+            <_RelativeProfileSetting Include="WPPAllFilesInSingleFolder">
+                <Value>$(_SingleFolderToPublish)</Value>
+            </_RelativeProfileSetting>
+            <_ProfileSetting Include="CleanWPPAllFilesInSingleFolder">
+                <Value>False</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="ExcludeGeneratedDebugSymbol">
+                <Value>$(ExcludeGeneratedDebugSymbolInPublish)</Value>
+            </_ProfileSetting>
+            <_RelativeProfileSetting Include="PackageSourceManifest">
+                <Value>$(_MSDeploySourceManifestFullPath)</Value>
+            </_RelativeProfileSetting>
+            <_ProfileSetting Include="DisableAllVSGeneratedMSDeployParameter">
+                <Value>True</Value>
+            </_ProfileSetting>
+            <_RelativeProfileSetting Include="ProjectParametersXMLFile">
+                <Value>$(_ProjectParametersXMLFile)</Value>
+            </_RelativeProfileSetting>
+            <_ProfileSetting Include="AutoParameterizationWebConfigConnectionStrings">
+                <Value>True</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="LightSwitchExcludeSetParameter">
+                <Value>$(LightSwitchExcludeSetParameter)</Value>
+            </_ProfileSetting>
+            <_ProfileSetting Include="LightSwitchPublishVersion">
+                <Value>$(LightSwitchPublishVersion)</Value>
+            </_ProfileSetting>
+            <_RelativeProfileSetting Include="LightSwitchSqlScriptFile">
+                <Value>$(_LightSwitchSqlScriptFileFullPath)</Value>
+            </_RelativeProfileSetting>
+        </ItemGroup>
+
+        <WritePublishProfile AddBeforeBuildTarget="true"
+                             ProjectFullPath="$(MSBuildProjectFullPath)"
+                             Properties="@(_ProfileSetting)"
+                             PublishProfile="$(_PublishProfile)"
+                             RelativeProperties="@(_RelativeProfileSetting)"
+                             RelativeToPath="$(ProjectDir)$(_ServerProjectName)\" />
+    </Target>
+
+    <Target Name="PublishDesktopApplication"
+            DependsOnTargets="CreateClickOnceManifests"
+            Condition=" '$(_PublishDisk)' == 'true' ">
+
+        <!-- Extract Install.htm to the staging directory -->
+        <GetEmbeddedResource OutputFile="%(_PublishOutDirItem.FullPath)\Install.htm"
+                             ResourceName="Microsoft.LightSwitch.Build.Tasks.Deployment.Install.htm" />
+
+        <ItemGroup>
+            <_PublishSourceFile Include="$(PublishOutDir)**\*.*" />
+        </ItemGroup>
+
+        <AssignTargetPath Files="@(_PublishSourceFile)" RootFolder="$(PublishOutDir)">
+            <Output TaskParameter="AssignedFiles" ItemName="_PublishSourceFileWithTargetPath" />
+        </AssignTargetPath>
+
+        <Copy SourceFiles="@(_PublishSourceFileWithTargetPath)" DestinationFiles="@(_PublishSourceFileWithTargetPath->'$(PublishLocation)%(TargetPath)')" />
+
+    </Target>
+
+    <Target Name="CreateClickOnceManifests"
+        DependsOnTargets="GetClickOnceManifestComponents"
+        Condition=" '$(_PublishDisk)' == 'true' ">
+
+        <PropertyGroup>
+            <_ApplicationManifestIdentity>$(MSBuildProjectName).exe</_ApplicationManifestIdentity>
+            <_DeploymentManifestIdentity>$(MSBuildProjectName).application</_DeploymentManifestIdentity>
+        </PropertyGroup>
+        <ItemGroup>
+            <_OutputApplicationManifest Include="$(_ApplicationDir)\$(_ApplicationManifestIdentity).manifest">
+                <TargetPath>$(_ApplicationFolderName)$(_ApplicationManifestIdentity).manifest</TargetPath>
+            </_OutputApplicationManifest>
+            <_OutputDeploymentManifest Include="$(PublishOutDir)\$(_DeploymentManifestIdentity)">
+                <TargetPath>$(_DeploymentManifestIdentity)</TargetPath>
+            </_OutputDeploymentManifest>
+
+            <!-- Turn off hashing for the following files, because they may be modified post-deployment -->
+            <_PublishInfo Include="web.config">
+                <PublishState>Auto</PublishState>
+                <IncludeHash>False</IncludeHash>
+                <FileType>File</FileType>
+            </_PublishInfo>
+            <_PublishInfo Include="default.htm">
+                <PublishState>Auto</PublishState>
+                <IncludeHash>False</IncludeHash>
+                <FileType>File</FileType>
+            </_PublishInfo>
+        </ItemGroup>
+
+        <!-- Bootstrapper data -->
+        <!-- Because we won't know in advance the location of the website the application is being installed to,
+             only launch the application for a disk-based install -->
+        <PropertyGroup Condition=" '$(_PublishDisk)' == 'true' ">
+            <_BootstrapperApplicationFile>$(_DeploymentManifestIdentity)</_BootstrapperApplicationFile>
+            <_BootstrapperComponentsLocation>$(BootstrapperComponentsLocation)</_BootstrapperComponentsLocation>
+        </PropertyGroup>
+        <PropertyGroup Condition=" '$(BootstrapperComponentsLocation)' == 'Absolute' ">
+            <_BootstrapperComponentsUrl>$(BootstrapperComponentsUrl)</_BootstrapperComponentsUrl>
+        </PropertyGroup>
+
+        <MakeDir Condition="!Exists('$(_ApplicationDir)')" Directories="$(_ApplicationDir)" />
+        <ResolveManifestFiles TargetFrameworkVersion="$(TargetFrameworkVersion)"
+                              SigningManifests="false"
+                              Files="@(ApplicationManifestFiles)"
+                              ManagedAssemblies="@(ApplicationManifestDependencies)"
+                              PublishFiles="@(_PublishInfo)">
+            <Output TaskParameter="OutputAssemblies" ItemName="_ResolvedManifestDependencies"/>
+            <Output TaskParameter="OutputFiles" ItemName="_ResolvedManifestFiles"/>
+        </ResolveManifestFiles>
+
+        <GenerateApplicationManifest AssemblyName="$(_ApplicationManifestIdentity)"
+                                     AssemblyVersion="$(AssemblyVersion)"
+                                     Dependencies="@(_ResolvedManifestDependencies)"
+                                     EntryPoint="@(ApplicationManifestEntryPoint)"
+                                     Files="@(_ResolvedManifestFiles)"
+                                     IconFile="@(_ApplicationIcon)"
+                                     OSVersion="$(OSVersion)"
+                                     OutputManifest="@(_OutputApplicationManifest)"
+                                     TargetFrameworkVersion="$(TargetFrameworkVersion)" />
+
+        <GenerateDeploymentManifest AssemblyName="$(_DeploymentManifestIdentity)"
+                                    AssemblyVersion="$(AssemblyVersion)"
+                                    EntryPoint="@(_OutputApplicationManifest)"
+                                    Install="$(Install)"
+                                    MapFileExtensions="$(MapFileExtensions)"
+                                    MinimumRequiredVersion="$(MinimumRequiredVersion)"
+                                    OutputManifest="@(_OutputDeploymentManifest)"
+                                    Product="$(ApplicationName)"
+                                    Publisher="$(PublisherName)"
+                                    TargetFrameworkVersion="$(TargetFrameworkVersion)"
+                                    TargetFrameworkMoniker="$(TargetFrameworkMoniker)"
+                                    UpdateEnabled="$(UpdateEnabled)"
+                                    UpdateMode="$(UpdateMode)" />
+
+        <GenerateBootstrapper ApplicationFile="$(_BootstrapperApplicationFile)"
+                              ApplicationName="$(ApplicationName)"
+                              BootstrapperItems="@(BootstrapperPackage)"
+                              ComponentsLocation="$(_BootstrapperComponentsLocation)"
+                              ComponentsUrl="$(_BootstrapperComponentsUrl)"
+                              Culture="$(ApplicationCulture)"
+                              OutputPath="$(PublishOutDir)"
+                              Path="$(GenerateBootstrapperSdkPath)"
+                              VisualStudioVersion="$(VisualStudioVersion)"
+                              Condition="'$(BootstrapperEnabled)'=='true'"/>
+
+        <ClearPublisherName DeploymentManifestPath="%(_OutputDeploymentManifest.FullPath)"
+                            TargetFrameworkVersion="$(TargetFrameworkVersion)"
+                            Condition=" '$(PublisherName)' == '' " />
+
+    </Target>
+
+    <Target Name="GetClickOnceManifestComponents">
+        <RemoveDuplicates Inputs="@(_PublishFile)">
+            <Output TaskParameter="Filtered" ItemName="_FilteredPublishFile" />
+        </RemoveDuplicates>
+        <GetClickOnceManifestComponents InputFiles="@(_FilteredPublishFile)"
+                                        Culture="$(ApplicationCulture)">
+            <Output TaskParameter="EntryPoint" ItemName="ApplicationManifestEntryPoint" />
+            <Output TaskParameter="Files" ItemName="ApplicationManifestFiles" />
+            <Output TaskParameter="Dependencies" ItemName="ApplicationManifestDependencies" />
+        </GetClickOnceManifestComponents>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="BuiltProjectOutputGroup"
+                 Condition=" '%(Type)' == 'Common' ">
+            <Output TaskParameter="TargetOutputs"
+                    ItemName="_BuiltOutput"/>
+        </MSBuild>
+    </Target>
+
+    <Target Name="DeploySchema"
+            Condition=" '$(ExecuteSchemaDeploy)' == 'true' ">
+        <DeploySchema ConnectionString="$(PublishConnectionString)"
+                      IncludeSecurityDBObjects="true"
+                      ServerArtifactsFolder="$(_ServerArtifactsFolder)"
+                      Collation="$(DatabaseCollation)"
+                      IntrinsicDacPackageFilePath="$(_IntrinsicDacPackageFilePath)"
+                      DatabaseProject="@(_DatabaseProjectItem)"
+                      Inputs="@(ServerMetadataFiles)"
+                      ProjectPath="$(MSBuildProjectFullPath)"/>
+
+        <CreateSqlUser ConnectionString="$(PublishConnectionString)"
+                       UserName="$(SqlUserName)"
+                       AuthenticationType="$(AuthenticationType)"
+                       Condition=" '$(CreateSqlUser)' == 'true' and '$(SqlUserName)' != 'sa' " />
+    </Target>
+
+    <PropertyGroup>
+        <StartPublishedApplicationDependsOn>StartPublishedAzureApplication</StartPublishedApplicationDependsOn>
+    </PropertyGroup>
+    <Target Name="StartPublishedApplication" DependsOnTargets="$(StartPublishedApplicationDependsOn)" />
+
+    <Target Name="StartPublishedAzureApplication" Condition=" '$(_PublishAzure)' == 'true' and !$(SkipPublishAzurePackage) ">
+        <StartAzureService SubscriptionId="$(AzureSubscriptionId)"
+                           ManagementThumbprint="$(AzureManagementThumbprint)"
+                           HostedServiceName="$(AzureHostedService)"
+                           HostedServiceLabel="$(AzureHostedServiceLabel)"
+                           ServiceBindingMaxLength="$(ServiceBindingMaxLength)"
+                           ServiceManagementEndpoint="$(AzureServiceManagementEndpoint)" />
+    </Target>
+
+    <!-- This generates the list of excludes for a service-only deployment -->
+    <Target Name="GenerateServiceOnlyExcludes"
+            DependsOnTargets="GetSubProjectOutputFiles"
+            Condition="('$(PublishServiceOnly)' == 'true') and ('$(LightSwitchProjectTypeV45)' == 'LightSwitch')">
+        <ItemGroup>
+            <ServiceOnlyExcludes Include="$(OutDir)\%(_BuildFile.SubFolder)\%(_BuildFile.Filename)%(_BuildFile.Extension)" Condition="'%(_BuildFile.Filename)%(_BuildFile.Extension)' == 'silverlight.js'"/>
+            <ServiceOnlyExcludes Include="$(OutDir)\%(_ProjectOutputFile.SubFolder)\%(_ProjectOutputFile.Filename)%(_ProjectOutputFile.Extension)" Condition="'%(_ProjectOutputFile.ProjectType)' == 'Client'"/>
+        </ItemGroup>
+    </Target>
+
+    <!-- GetSubProjectOutputFiles is in Microsoft.LightSwitch.targets -->
+    <Target Name="BuildProjectOutputGroup"
+            Outputs="@(BuildProjectOutputGroupOutput)"
+            DependsOnTargets="GetSubProjectOutputFiles;GenerateServiceOnlyExcludes"
+            Condition="'$(LightSwitchProjectTypeV45)' == 'LightSwitch'">
+        <PropertyGroup>
+            <_PublishType Condition=" '$(ApplicationServerType)' != 'LocalHost' ">Web</_PublishType>
+            <_PublishType Condition=" '$(_PublishType)' == '' ">Desktop</_PublishType>
+        </PropertyGroup>
+
+        <!-- vslshost.exe requires that the .xap file reside in the "Web" sub-directory, but ProjectOutputFile may default it to a different subfolder.
+             Create an exclude for the wrong subfolder and re-add to the correct subfolder -->
+        <ItemGroup Condition=" '$(_PublishType)' == 'Desktop' ">
+            <_DesktopPublishExcludes Include="$(OutDir)\%(_ProjectOutputFile.SubFolder)\%(_ProjectOutputFile.Filename)%(_ProjectOutputFile.Extension)" Condition="'%(_ProjectOutputFile.ClientOutputXap)' == 'true'"/>
+            <_DesktopPublishExcludes Include="$(OutDir)\%(_ProjectOutputFile.SubFolder)\%(_ProjectOutputFile.Filename)%(_ProjectOutputFile.Extension)" Condition="'%(_ProjectOutputFile.Filename)%(_ProjectOutputFile.Extension)' == 'default.htm'"/>
+
+            <_RebasedDesktopPublishFile Include="$(OutDir)\%(_ProjectOutputFile.SubFolder)\%(_ProjectOutputFile.Filename)%(_ProjectOutputFile.Extension)" Condition="'%(_ProjectOutputFile.ClientOutputXap)' == 'true'">
+                <CopyLocal>%(_ProjectOutputFile.CopyLocal)</CopyLocal>
+                <SubFolder>Web</SubFolder>
+            </_RebasedDesktopPublishFile>
+            <_RebasedDesktopPublishFile Include="$(OutDir)\%(_ProjectOutputFile.SubFolder)\%(_ProjectOutputFile.Filename)%(_ProjectOutputFile.Extension)" Condition="'%(_ProjectOutputFile.Filename)%(_ProjectOutputFile.Extension)' == 'default.htm'">
+                <CopyLocal>%(_ProjectOutputFile.CopyLocal)</CopyLocal>
+                <SubFolder></SubFolder>
+            </_RebasedDesktopPublishFile>
+        </ItemGroup>
+
+        <!-- _ClientXap defined in ProcessPublishProperties target -->
+        <ItemGroup Condition=" '@(_ClientXap)' == '' ">
+            <_NoSilverlightExcludes Include="$(OutDir)\%(_BuildFile.SubFolder)\%(_BuildFile.Filename)%(_BuildFile.Extension)" Condition="'%(_BuildFile.Filename)%(_BuildFile.Extension)' == 'silverlight.js'"/>
+        </ItemGroup>
+
+        <ItemGroup>
+            <_BuildProjectOutputGroupOutputIntermediate Include="$(OutDir)\%(_BuildFile.SubFolder)\%(_BuildFile.Filename)%(_BuildFile.Extension)" Condition=" '$(_PublishType)' == 'Desktop' and '%(_BuildFile.PublishType)' == 'EntryPoint' ">
+                <IsEntryPoint>true</IsEntryPoint>
+                <CopyLocal>true</CopyLocal>
+                <SubFolder>%(_BuildFile.SubFolder)</SubFolder>
+            </_BuildProjectOutputGroupOutputIntermediate>
+
+            <_BuildProjectOutputGroupOutputIntermediate Include="$(OutDir)\%(_BuildFile.SubFolder)\%(_BuildFile.Filename)%(_BuildFile.Extension)" Condition=" '%(_BuildFile.PublishType)' == ''  or '%(_BuildFile.PublishType)' == '$(_PublishType)' ">
+                <CopyLocal>true</CopyLocal>
+                <SubFolder>%(_BuildFile.SubFolder)</SubFolder>
+            </_BuildProjectOutputGroupOutputIntermediate>
+
+            <_BuildProjectOutputGroupOutputIntermediate Include="$(OutDir)\%(_ProjectOutputFile.SubFolder)\%(_ProjectOutputFile.Filename)%(_ProjectOutputFile.Extension)" Condition=" '%(_ProjectOutputFile.CopyLocal)' == 'true' and ('%(_ProjectOutputFile.PublishType)' == ''  or '%(_ProjectOutputFile.PublishType)' == '$(_PublishType)') ">
+                <CopyLocal>%(_ProjectOutputFile.CopyLocal)</CopyLocal>
+                <SubFolder>%(_ProjectOutputFile.SubFolder)</SubFolder>
+            </_BuildProjectOutputGroupOutputIntermediate>
+            <_BuildProjectOutputGroupOutputIntermediate Include="%(_ProjectOutputFile.FullPath)" Condition=" '%(_ProjectOutputFile.CopyLocal)' != 'true' and ('%(_ProjectOutputFile.PublishType)' == ''  or '%(_ProjectOutputFile.PublishType)' == '$(_PublishType)') ">
+                <CopyLocal>%(_ProjectOutputFile.CopyLocal)</CopyLocal>
+                <SubFolder>%(_ProjectOutputFile.SubFolder)</SubFolder>
+            </_BuildProjectOutputGroupOutputIntermediate>
+
+            <!-- Exclude specific files if we're doing a service only deployment -->
+            <_BuildProjectOutputGroupOutputIntermediate Remove="@(ServiceOnlyExcludes)"
+                                                        Condition="'$(PublishServiceOnly)' == 'true'"/>
+
+            <!-- Exclude files mis-placed for Desktop publish -->
+            <_BuildProjectOutputGroupOutputIntermediate Remove="@(_DesktopPublishExcludes)" />
+
+            <!-- Exclude files that shouldn't be published if there is no Silverlight client -->
+            <_BuildProjectOutputGroupOutputIntermediate Remove="@(_NoSilverlightExcludes)" />
+
+            <!-- Add the re-based files for Desktop publish-->
+            <_BuildProjectOutputGroupOutputIntermediate Include="%(_RebasedDesktopPublishFile.FullPath)">
+                <CopyLocal>%(_RebasedDesktopPublishFile.CopyLocal)</CopyLocal>
+                <SubFolder>%(_RebasedDesktopPublishFile.SubFolder)</SubFolder>
+            </_BuildProjectOutputGroupOutputIntermediate>
+
+            <!-- Set TargetPath property based on SubFolder -->
+            <BuildProjectOutputGroupOutput Include="@(_BuildProjectOutputGroupOutputIntermediate->'%(FullPath)')" Condition=" '%(SubFolder)' == '' ">
+                <TargetPath>%(Filename)%(Extension)</TargetPath>
+            </BuildProjectOutputGroupOutput>
+            <BuildProjectOutputGroupOutput Include="@(_BuildProjectOutputGroupOutputIntermediate->'%(FullPath)')" Condition=" '%(SubFolder)' != '' and !HasTrailingSlash('%(SubFolder)')">
+                <TargetPath>%(SubFolder)\%(Filename)%(Extension)</TargetPath>
+            </BuildProjectOutputGroupOutput>
+            <BuildProjectOutputGroupOutput Include="@(_BuildProjectOutputGroupOutputIntermediate->'%(FullPath)')" Condition=" '%(SubFolder)' != '' and HasTrailingSlash('%(SubFolder)')">
+                <TargetPath>%(SubFolder)%(Filename)%(Extension)</TargetPath>
+            </BuildProjectOutputGroupOutput>
+
+            <Clean Include="$(OutDir)\%(_BuildFile.SubFolder)\%(_BuildFile.Filename)%(_BuildFile.Extension)" />
+            <Clean Include="$(OutDir)\%(_ProjectOutputFile.SubFolder)\%(_ProjectOutputFile.Filename)%(_ProjectOutputFile.Extension)" />
+        </ItemGroup>
+    </Target>
+
+    <Target Name="AllProjectOutputGroups"
+            DependsOnTargets="BuildProjectOutputGroup" />
+
+    <!-- Include the server design assemblies for special processing - these assemblies must be deployed to the bin\web directory but
+         shouldn't be referenced so they don't get included on publish -->
+    <ItemGroup>
+        <_DesignTimeSupport Include="$(LightSwitchPath)\LightSwitch\Server\Microsoft.LightSwitch.Design.Server.Internal.dll">
+            <SubFolder>bin</SubFolder>
+        </_DesignTimeSupport>
+        <_DesignTimeSupport Include="$(LightSwitchPath)\LightSwitch\Server\Manifests\Microsoft.LightSwitch.Design.Server.Manifest.dll">
+            <SubFolder>web\Manifests</SubFolder>
+        </_DesignTimeSupport>
+    </ItemGroup>
+
+    <PropertyGroup>
+        <ValidatePublishPropertiesDependsOn>
+            ResolveRequiresIntrinsicDataSource;
+        </ValidatePublishPropertiesDependsOn>
+    </PropertyGroup>
+
+    <Target Name="ValidatePublishProperties"
+            DependsOnTargets="$(ValidatePublishPropertiesDependsOn)"
+            Condition="'$(BuildingInsideVisualStudio)' != 'true'">
+        <Error Condition=" $(RequiresIntrinsicDataSource) and !($(_GenerateSchemaScript) or $(_GenerateSchemaDacPackage)) and !$(_IsSharePointAutoHosted)" Text="Command line publish is only supported when configured to generate deployment scripts. Use the publish wizard in Visual Studio LightSwitch to configure this project to generate scripts for deployment" />
+    </Target>
+
+</Project>

@@ -1,0 +1,433 @@
+<!--
+***********************************************************************************************
+Microsoft.LightSwitch.targets
+
+WARNING:  DO NOT MODIFY this file unless you are knowledgeable about MSBuild and have
+          created a backup copy.  Incorrect changes to this file will make it
+          impossible to load or build your projects from the command-line or the IDE.
+
+This file defines the steps in the standard build process the root SMB project.
+
+Copyright (C) Microsoft Corporation. All rights reserved.
+***********************************************************************************************
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+    <Import Project="Microsoft.LightSwitch.Common.targets" />
+
+    <PropertyGroup>
+        <UseDesignTimeFeatures Condition=" '$(UseDesignTimeFeatures)' == '' ">false</UseDesignTimeFeatures>
+    </PropertyGroup>
+
+    <UsingTask TaskName="GetConnectionStrings" AssemblyFile="$(LightSwitchTasksPath)" />
+    <UsingTask TaskName="UpdateDefaultFile" AssemblyFile="$(LightSwitchTasksPath)"/>
+    <UsingTask TaskName="WriteToConfigFile" AssemblyFile="$(LightSwitchTasksPath)"/>
+    <UsingTask TaskName="ValidateSharePointSettings" AssemblyFile="$(LightSwitchTasksPath)" />
+    <UsingTask TaskName="BuildSchema" AssemblyFile="$(LightSwitchTasksPath)"/>
+    <UsingTask TaskName="UpdateDataSourceSection" AssemblyFile="$(LightSwitchTasksPath)"/>
+    <UsingTask TaskName="CopyExtensionAssembliesToOutputDir" AssemblyFile="$(LightSwitchTasksPath)"/>
+    <UsingTask TaskName="UnpackExtensionsToProjectDir" AssemblyFile="$(LightSwitchTasksPath)"/>
+    <UsingTask TaskName="ResJsonCleanerTask" AssemblyFile="$(LightSwitchTasksPath)"/>
+
+    <ItemGroup>
+        <!-- $(OutDir)\Manifests\ folder structure -->
+        <_BuildFile Include="$(LightSwitchSDKPath)\Server\Manifests\Microsoft.LightSwitch.Server.Manifest.dll">
+            <SubFolder>Web\Manifests</SubFolder>
+            <PublishType></PublishType>
+        </_BuildFile>
+
+    <!-- Required by vslshost -->
+    <_BuildFile Include="$(LightSwitchSDKPath)\Server\Microsoft.LightSwitch.Server.dll">
+      <SubFolder>bin</SubFolder>
+      <PublishType></PublishType>
+    </_BuildFile>
+    <_BuildFile Include="$(LightSwitchSDKPath)\Server\System.ServiceModel.PollingDuplex.dll">
+      <SubFolder>bin</SubFolder>
+      <PublishType></PublishType>
+    </_BuildFile>
+  </ItemGroup>
+
+    <!-- 
+         **********************************************************************************
+                                Build
+         Override of the default build target provided by Microsoft.Common.targets.
+         **********************************************************************************
+   -->
+
+    <PropertyGroup>
+        <BuildDependsOn>ResolveProjectReferences;GetSubProjectOutputFiles;CoreLSBuild;IncrementalClean;CopyServerExtensions</BuildDependsOn>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(BuildingInsideVisualStudio)'!='true'">
+        <BuildDependsOn>PrepareForBuild;$(BuildDependsOn)</BuildDependsOn>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <PrepareForBuildDependsOn>RefreshExtensions</PrepareForBuildDependsOn>
+    </PropertyGroup>
+
+    <Target Name="PrepareForBuild"
+            DependsOnTargets="$(PrepareForBuildDependsOn)"
+            Condition="'$(BuildingInsideVisualStudio)'!='true'">
+        <MakeDir Directories="$(OutDir);$(IntermediateOutputPath)" ContinueOnError="True"/>
+    </Target>
+
+
+    <Target Name="Build" DependsOnTargets="$(BuildDependsOn)">
+    </Target>
+
+    <!-- 
+         **********************************************************************************
+                                CoreLSBuild
+         Main target to do build. We need this so that the Build target can force an IncrementalClean
+         after all these files are copied. This is required to handle the case where some previously referenced
+         assemblies have been removed - and we're relying on the IncrementalClean target to manage the list of files
+         and to remove any files which are no longer referenced
+         **********************************************************************************
+    -->
+    <Target Name="CoreLSBuild">
+        <Copy SourceFiles="$(LightSwitchSDKPath)%(_BuildFile.Identity)"
+              DestinationFolder="$(OutDir)%(SubFolder)"
+              SkipUnchangedFiles="true"
+              Condition=" '@(_BuildFile)' != '' and (('%(_BuildFile.PublishType)' == 'EntryPoint' or '%(_BuildFile.PublishType)' == 'Exclude'  or '%(_BuildFile.PublishType)' == 'Desktop')) and Exists('$(LightSwitchSDKPath)%(_BuildFile.Identity)')">
+            <Output TaskParameter="DestinationFiles" ItemName="FileWrites"/>
+        </Copy>
+
+        <Copy SourceFiles="%(_BuildFile.Identity)"
+              DestinationFolder="$(OutDir)%(SubFolder)"
+              SkipUnchangedFiles="true"
+              Condition=" '@(_BuildFile)' != '' and Exists('%(_BuildFile.Identity)')">
+            <Output TaskParameter="DestinationFiles" ItemName="FileWrites"/>
+        </Copy>
+
+        <Copy SourceFiles="%(_ProjectOutputFile.Identity)"
+              DestinationFolder="$(OutDir)%(SubFolder)"
+              SkipUnchangedFiles="true"
+              Condition=" '@(_ProjectOutputFile)' != '' and '%(_ProjectOutputFile.CopyLocal)' == 'true' ">
+            <Output TaskParameter="DestinationFiles" ItemName="FileWrites"/>
+        </Copy>
+
+        <!-- Validate the supported cultures match between client and server -->
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="ValidateMatchingCultures"
+                 ContinueOnError="true"
+                 Condition=" '%(Type)' == 'Client' ">
+        </MSBuild>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="GetResJsonBuildFilePath"
+                 ContinueOnError="true"
+                 RebaseOutputs="true"
+                 Condition=" '%(Type)' == 'Client' ">
+            <Output TaskParameter="TargetOutputs" ItemName="_ResJsonBuildOutputFiles" />
+        </MSBuild>
+
+        <ResJsonCleanerTask ResJsonBuildOutputFiles="@(_ResJsonBuildOutputFiles)"
+                            OutDir ="$(MSBuildProjectDirectory)\$(OutDir)">
+
+        </ResJsonCleanerTask>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="GetModelFiles"
+                 ContinueOnError="true"
+                 RebaseOutputs="true"
+                 Condition=" '%(Type)' == 'Server' ">
+            <Output TaskParameter="TargetOutputs" ItemName="ServerMetadataFiles" />
+        </MSBuild>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="GetModelFiles"
+                 ContinueOnError="true"
+                 RebaseOutputs="true"
+                 Condition=" '%(Type)' == 'Client' ">
+            <Output TaskParameter="TargetOutputs" ItemName="ClientMetadataFiles" />
+        </MSBuild>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="GetGeneratedMetadataFiles"
+                 ContinueOnError="true"
+                 RebaseOutputs="true"
+                 Condition=" '%(Type)' == 'Server' ">
+            <Output TaskParameter="TargetOutputs" ItemName="ServerGeneratedMetadataFiles" />
+        </MSBuild>
+      
+        <ItemGroup>
+            <_DatabaseProject Include="@(ProjectReference)"
+                              Condition=" '%(Type)' == 'Database' " />
+        </ItemGroup>
+
+        <!--The Development Database is built in the same location - Bin\Data - for all configurations.-->
+        <BuildSchema Inputs="@(ServerMetadataFiles)"
+                     ServerGeneratedMetadataFiles="@(ServerGeneratedMetadataFiles)"
+                     Collation="$(DatabaseCollation)"
+                     DatabaseProject="@(_DatabaseProject)"
+                     ProjectPath="$(MSBuildProjectFullPath)"
+                     OutputDirectory="Bin\Data"
+                     SqlExpressInstanceName="$(SqlExpressInstanceName)"
+                     ExternalDataSources="@(ServerExternalDataSources)"
+                     Condition="'$(SkipBuildSchema)' == ''"/>
+        <!--The _IntrinsicData connection string should be updated to use the SQL Express Instance Name
+            from the LightSwitch Project' Property-->
+        <UpdateDataSourceSection ConfigFile="$(OutDir)\web.config"
+                                 Name="_IntrinsicData"
+                                 Key="Data Source"
+                                 Value="$(SqlExpressInstanceName)"
+                                 Condition="'$(SkipBuildSchema)' == ''"/>
+        <!--The _IntrinsicData connection string should be updated to use the absolute path 
+            since the Development Database is not under build output directory.-->
+        <UpdateDataSourceSection ConfigFile="$(OutDir)\web.config"
+                                 Name="_IntrinsicData"
+                                 Key="AttachDbFilename"
+                                 Value="'$(MSBuildProjectDirectory)\Bin\Data\ApplicationDatabase.mdf'"
+                                 Condition="'$(SkipBuildSchema)' == ''"/>
+
+        <GetConnectionStrings IsBuildingInsideVisualStudio="$(BuildingInsideVisualStudio)"
+                     Inputs="@(ServerMetadataFiles)"
+                     ProjectPath="$(MSBuildProjectFullPath)"
+                     Condition="'$(SkipBuildSchema)' == ''"
+        >
+            <Output TaskParameter="ConnectionStrings" ItemName="_ConnectionStrings" />
+        </GetConnectionStrings>
+
+        <WriteToConfigFile ConfigFile="$(OutDir)\web.config"
+                           PublishParameters="@(_ConnectionStrings)">
+        </WriteToConfigFile>
+
+        <ValidateSharePointSettings Condition=" '$(AuthenticationType)' == 'SharePoint' and '$(ApplicationServerType)' != 'SharePointAutoHost' "
+                                    SharePointAuthenticationType="$(DebugSharePointAuthenticationType)"
+                                    CertificatePath="$(DebugSharePointServerToServerCertificatePath)"
+                                    CertificatePassword="$(DebugSharePointServerToServerCertificatePassword)"
+                                    CertificateIssuerId="$(DebugSharePointServerToServerCertificateIssuerId)">
+        </ValidateSharePointSettings>
+
+        <UpdateDefaultFile Files="$(OutDir)\default.htm"
+                           Title="$(ApplicationName)"
+                           ApplicationVersion="$(AssemblyVersion)"
+                           UpdateXapSource="$(_IsBrowserApplication)"
+                           Condition="Exists('$(OutDir)\default.htm')"/>
+
+        <ItemGroup>
+            <_BuildFile Include="@(SatAssembliesBuildFiles)"/>
+        </ItemGroup>
+    </Target>
+
+    <Target Name="GetSubProjectOutputFiles">
+        <!-- Remove all contents from the item group. This target re-populates the group -->
+        <ItemGroup>
+            <_ProjectOutputFile Remove="@(_ProjectOutputFile)" />
+            <_SatelliteOutputFile Remove="@(_SatelliteOutputFile)" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <_ServerProjectName  Condition=" '%(Type)' == 'Server'">$([System.IO.Path]::GetFileNameWithoutExtension(%(ProjectReference.Identity)))</_ServerProjectName>
+        </PropertyGroup>
+
+
+        <!-- Get the path to the output assembly of the nested projects. -->
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="BuiltProjectOutputGroup"
+                 Condition=" '%(Type)' == 'Server' ">
+            <Output TaskParameter="TargetOutputs"
+                    ItemName="_ServerBuiltOutput"/>
+        </MSBuild>
+
+        <!-- Determine the list of satellite resource assemblies built by the server project-->
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="SatelliteDllsProjectOutputGroup"
+                 Condition=" '%(Type)' == 'Server' ">
+            <Output TaskParameter="TargetOutputs"
+                    ItemName="_ServerSatelliteBuiltOutput"/>
+        </MSBuild>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="GetOutputPath"
+                 RebaseOutputs="true"
+                 Condition=" '%(Type)' == 'Server' ">
+            <Output TaskParameter="TargetOutputs"
+                    ItemName="_ServerOutputPath"/>
+        </MSBuild>
+
+        <ReadLinesFromFile
+              File="%(_ServerOutputPath.Identity)\CopyLocalPaths.txt">
+            <Output
+                TaskParameter="Lines"
+                ItemName="_ServerBuiltOutputDependency"/>
+        </ReadLinesFromFile>
+
+        <ReadLinesFromFile
+              File="%(_ServerOutputPath.Identity)\SatellitePaths.txt">
+            <Output
+                TaskParameter="Lines"
+                ItemName="_ServerSatelliteDllsOutput"/>
+        </ReadLinesFromFile>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="GetContentFiles"
+                 RebaseOutputs="True"
+                 Condition=" '%(Type)' == 'Server' ">
+            <Output TaskParameter="TargetOutputs"
+                    ItemName="_ServerContentOutput"/>
+        </MSBuild>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="GetSvcFiles"
+                 Condition=" '%(Type)' == 'Server' ">
+            <Output TaskParameter="TargetOutputs"
+                    ItemName="_ServerGeneratedSvcOutput"/>
+        </MSBuild>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Condition=" '%(Type)' == 'Client' "
+                 Targets="GetClientBuildFilePath"
+                 ContinueOnError="true">
+            <Output TaskParameter="TargetOutputs"
+                    ItemName="_ClientBuildFilePaths"/>
+        </MSBuild>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="GetServiceResJsonFiles"
+                 ContinueOnError="true"
+                 RebaseOutputs="true"
+                 Condition=" '%(Type)' == 'Client' ">
+            <Output TaskParameter="TargetOutputs" ItemName="_ServiceResJsonFiles" />
+        </MSBuild>
+
+        <MSBuild Projects="@(ProjectReference)"
+                 Targets="GetSupportedMslsResJsonFiles"
+                 ContinueOnError="true"
+                 RebaseOutputs="true"
+                 Condition=" '%(Type)' == 'Client' ">
+            <Output TaskParameter="TargetOutputs" ItemName="_MslsResJsonFiles" />
+        </MSBuild>
+
+        <AssignTargetPath
+            RootFolder="$(_ServerProjectName)"
+            Files="@(_ServerContentOutput)"
+            Condition=" '%(_ServerContentOutput.CopyToOutputDirectory)'=='' and $([System.String]::new(%(_ServerContentOutput.RelativeDir)).StartsWith('$(_ServerProjectName)\', StringComparison.OrdinalIgnoreCase))  and '%(_ServerContentOutput.Extension)' != '.xap' ">
+            <Output TaskParameter="AssignedFiles"
+                ItemName="_ServerContentOutputWithTargetOutput"/>
+        </AssignTargetPath>
+
+        <ItemGroup>
+            <_ProjectOutputFile Include="@(_ServerBuiltOutput)">
+                <CopyLocal>true</CopyLocal>
+                <SubFolder>bin</SubFolder>
+                <ProjectType>Server</ProjectType>
+            </_ProjectOutputFile>
+
+            <_ProjectOutputFile Include="@(_ServerBuiltOutputDependency)">
+                <CopyLocal>true</CopyLocal>
+                <SubFolder>bin</SubFolder>
+                <ProjectType>Server</ProjectType>
+            </_ProjectOutputFile>
+
+            <_ProjectOutputFile Remove="@(_ProjectOutputFile)" Condition="'%(Extension)'!='.dll'"/>
+
+            <!-- Copy satellite resources for the built server dll. -->
+            <_SatelliteOutputFile Include="@(_ServerSatelliteBuiltOutput)" Condition="'@(_ServerSatelliteBuiltOutput)' != ''" >
+                <CopyLocal>true</CopyLocal>
+                <SubFolder>bin\$([System.IO.Path]::GetFileNameWithoutExtension($([System.IO.Path]::GetDirectoryName(%(_ServerSatelliteBuiltOutput.Identity)))))</SubFolder>
+                <ProjectType>Server</ProjectType>
+            </_SatelliteOutputFile>
+
+            <!-- Copy satellite resources for the server runtime dlls. -->
+            <_SatelliteOutputFile Include="@(_ServerSatelliteDllsOutput)" Condition="'@(_ServerSatelliteDllsOutput)' != ''">
+                <CopyLocal>true</CopyLocal>
+                <SubFolder>bin\$([System.IO.Path]::GetFileNameWithoutExtension($([System.IO.Path]::GetDirectoryName(%(_ServerSatelliteDllsOutput.Identity)))))</SubFolder>
+                <ProjectType>Server</ProjectType>
+            </_SatelliteOutputFile>
+
+            <_SatelliteOutputFile Remove="@(_SatelliteOutputFile)" Condition="'%(Extension)'!='.dll'"/>
+
+            <_ProjectOutputFile Include="@(_SatelliteOutputFile)"/>
+
+            <_ProjectOutputFile Include="@(_ServerContentOutput->'%(FullPath)')"
+                                Condition="'%(_ServerContentOutput.CopyToOutputDirectory)'=='Always' or '%(_ServerContentOutput.CopyToOutputDirectory)'=='PreserveNewest'">
+                <CopyLocal>true</CopyLocal>
+                <SubFolder>bin\%(_ServerContentOutput.RelativeDir)</SubFolder>
+                <ProjectType>Server</ProjectType>
+            </_ProjectOutputFile>
+            <_ProjectOutputFile Include="%(_ServerContentOutputWithTargetOutput.FullPath)">
+                <CopyLocal>true</CopyLocal>
+                <SubFolder>$([System.IO.Path]::GetDirectoryName(%(_ServerContentOutputWithTargetOutput.TargetPath)))</SubFolder>
+                <ProjectType>Server</ProjectType>
+            </_ProjectOutputFile>
+            <_ProjectOutputFile Include="@(_ServerGeneratedSvcOutput->'%(FullPath)')">
+                <CopyLocal>true</CopyLocal>
+                <SubFolder></SubFolder>
+                <ProjectType>Server</ProjectType>
+            </_ProjectOutputFile>
+            <_ProjectOutputFile Include="@(_ClientBuildFilePaths->'%(FullPath)')">
+                <CopyLocal>true</CopyLocal>
+                <SubFolder>%(_ClientBuildFilePaths.SubFolder)</SubFolder>
+                <ProjectType>Client</ProjectType>
+            </_ProjectOutputFile>
+            <_ProjectOutputFile Include="@(_ServiceResJsonFiles->'%(FullPath)')">
+                <CopyLocal>true</CopyLocal>
+                <SubFolder>%(_ServiceResJsonFiles.SubFolder)</SubFolder>
+                <ProjectType>Client</ProjectType>
+            </_ProjectOutputFile>
+            <_ProjectOutputFile Include="@(_MslsResJsonFiles->'%(FullPath)')">
+                <CopyLocal>true</CopyLocal>
+                <SubFolder>%(_MslsResJsonFiles.SubFolder)</SubFolder>
+                <ProjectType>Client</ProjectType>
+            </_ProjectOutputFile>
+        </ItemGroup>
+
+    </Target>
+
+    <!-- Is browser an application -->
+    <PropertyGroup>
+        <_IsBrowserApplication>false</_IsBrowserApplication>
+        <_IsBrowserApplication Condition=" '$(ApplicationClientType)' == 'Browser' ">true</_IsBrowserApplication>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <CleanDependsOn>
+            $(CleanDependsOn);
+        </CleanDependsOn>
+    </PropertyGroup>
+
+    <Target Name="CopyServerExtensions">
+        <MSBuild
+            Projects="@(ProjectReference)"
+            Condition="'%(ProjectReference.Name)'=='Server'"
+            Targets="GetResolvedReferencePath"
+            ContinueOnError="true">
+
+            <Output TaskParameter="TargetOutputs" ItemName="ResolvedServerReferencePaths"/>
+        </MSBuild>
+
+        <Message Text="ResolvedServerReferencePaths in CopyServerExtensions = @(ResolvedServerReferencePaths)" Importance="Low"/>
+
+        <CopyExtensionAssembliesToOutputDir Extensions="@(LightSwitchExtension)"
+                                            ServerReferences="@(ResolvedServerReferencePaths)"
+                                            OutputDirectory="$(OutDir)"/>
+    </Target>
+
+    <!--
+    ======================================================================================
+                               RefreshExtensions
+    
+    This locates the extension packages that local to the project and updates all
+    extension content in the _Pvt_Extensions directory in the project. This is done before
+    the affiliated projects are built so that any assemblies the projects reference in the
+    _Pvt_Extensions directory are up to date.
+    ======================================================================================
+    -->
+    <PropertyGroup>
+        <RefreshExtensionsDependsOn></RefreshExtensionsDependsOn>
+    </PropertyGroup>
+
+    <Target Name="RefreshExtensions"
+            DependsOnTargets="$(RefreshExtensionsDependsOn)"
+            Condition="'$(BuildingInsideVisualStudio)'!='true'">
+
+        <UnpackExtensionsToProjectDir Inputs="@(ClientMetadataFiles)"
+                                      ProjectExtensions="@(LightSwitchExtension)"
+                                      ProjectPath="$(MSBuildProjectFullPath)"/>
+    </Target>
+
+    <Import Project="Publish\$(LightSwitchPublishVersion)\Microsoft.LightSwitch.Publish.targets" Condition="Exists('Publish\$(LightSwitchPublishVersion)\Microsoft.LightSwitch.Publish.targets')" />
+
+</Project>
