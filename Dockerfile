@@ -15,7 +15,7 @@ RUN choco install nuget.commandline -y
 RUN $env:Path = 'C:\Program Files (x86)\NuGet;' + $env:Path; [Environment]::SetEnvironmentVariable('Path', $env:Path, [EnvironmentVariableTarget]::Machine)
 
 # Copy msbuild
-COPY MSBuild "C:\Program Files (x86)\"
+COPY MSBuild "C:\\Program Files (x86)\\"
 
 # Add MSBuild to PATH
 RUN $env:Path = 'C:\Program Files (x86)\MSBuild\14.0\Bin;' + $env:Path; [Environment]::SetEnvironmentVariable('Path', $env:Path, [EnvironmentVariableTarget]::Machine)
